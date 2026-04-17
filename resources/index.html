@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC 本地页面</title>
+    <style>
+      body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; margin:0; padding:16px; background:#f7f7f9; }
+      .container { max-width: 720px; margin: 0 auto; }
+      .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:16px; }
+      .title { font-size:18px; font-weight:600; margin-bottom:12px; }
+      .row { display:flex; gap:12px; flex-wrap:wrap; }
+      .row .col { flex:1; min-width:220px; }
+      label { display:block; font-size:13px; color:#555; margin-bottom:6px; }
+      input { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; font-size:14px; }
+      .btn { padding:10px 14px; border:0; border-radius:8px; background:#007bff; color:#fff; cursor:pointer; font-size:14px; }
+      .btn.warn { background:#ffc107; color:#333; }
+      .btn.success { background:#28a745; }
+      .status { padding:8px 10px; background:#f8f9fa; border:1px solid #eee; border-radius:8px; font-size:13px; color:#333; }
+      .log { background:#0f172a; color:#e2e8f0; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; padding:12px; border-radius:8px; max-height:260px; overflow:auto; }
+      .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; margin-left:8px; }
+      .badge.ok { background:#d1fae5; color:#065f46; }
+      .badge.err { background:#fee2e2; color:#991b1b; }
+    </style>
+    <!-- 直接从应用本地资源加载 Cordova 脚本 -->
+    <script src="../cordova.js"></script>
+    <script src="../cordova_plugins.js"></script>
+    <script>
+      function log(msg, type='info'){ const el=document.getElementById('log'); const line=document.createElement('div'); const ts=new Date().toLocaleTimeString(); line.textContent=`[${ts}] ${msg}`; if(type==='error') line.style.color='#fca5a5'; if(type==='success') line.style.color='#86efac'; el.appendChild(line); el.scrollTop=el.scrollHeight; console.log(msg); }
+
+      let isReady=false, isPluginInitialized=false;
+
+      document.addEventListener('deviceready', function(){
+        isReady=true; log('deviceready');
+        const env=document.getElementById('env'); if(env){ env.textContent='已就绪'; env.className='badge ok'; }
+        // 可选：自动初始化
+        // initPlugin();
+      }, false);
+
+      function ensureReady(){
+        if(!isReady){ log('设备未就绪，请等待 deviceready', 'error'); return false; }
+        if(typeof cordova==='undefined'){ log('cordova 未注入（cordova.js 未加载成功）', 'error'); return false; }
+        if(!cordova.plugins || !cordova.plugins.NFCLockPlugin){ log('NFCLockPlugin 未找到（检查 cordova_plugins.js 与 plugins 目录）', 'error'); return false; }
+        return true;
+      }
+
+      function initPlugin(){
+        if(!ensureReady()) return;
+        log('初始化插件...');
+        cordova.plugins.NFCLockPlugin.init(function(res){
+          isPluginInitialized=true;
+          document.getElementById('plugin').textContent='已初始化';
+          document.getElementById('plugin').className='badge ok';
+          log('插件初始化成功: '+res, 'success');
+          registerCallback();
+        }, function(err){
+          document.getElementById('plugin').textContent='失败';
+          document.getElementById('plugin').className='badge err';
+          log('插件初始化失败: '+err, 'error');
+        });
+      }
+
+      function registerCallback(){
+        cordova.plugins.NFCLockPlugin.registerCallback(function(result){
+          log('收到回调: '+JSON.stringify(result));
+          if(result && result.type==='queryLockId' && result.lockId){ document.getElementById('displayLockId').value=result.lockId; }
+          if(result && result.type==='queryLockPassword' && result.lockPassword){ document.getElementById('displayPassword').value=result.lockPassword; }
+          if(result && result.type==='queryPowerLevel' && result.powerLevel!=null){
+            const p=document.getElementById('powerLevel');
+            if(p){ p.textContent = result.powerLevel + '%'; }
+            log('当前电量: '+ result.powerLevel + '%', 'success');
+          }
+          if(result && (result.type==='motorForward' || result.motorForwardSuccess!==undefined)){
+            document.getElementById('unlockStatus').textContent = result.motorForwardSuccess ? '开锁成功' : '开锁失败';
+            // 动作完成后刷新电量
+            try { cordova.plugins.NFCLockPlugin.queryPowerLevel(()=>{},()=>{}); } catch(e){}
+          }
+          if(result && (result.type==='motorReverse' || result.motorReverseSuccess!==undefined)){
+            document.getElementById('unlockStatus').textContent = result.motorReverseSuccess ? '关锁成功' : '关锁失败';
+            // 动作完成后刷新电量
+            try { cordova.plugins.NFCLockPlugin.queryPowerLevel(()=>{},()=>{}); } catch(e){}
+          }
+        }, function(error){ log('回调错误: '+JSON.stringify(error), 'error'); });
+      }
+
+      function queryLockId(){ if(!ensureReady()||!isPluginInitialized){ log('请先初始化插件', 'error'); return; } log('查询锁ID...'); cordova.plugins.NFCLockPlugin.queryLockId(function(ok){ log('查询锁ID请求已发送: '+ok, 'success'); }, function(err){ log('查询锁ID失败: '+err, 'error'); }); }
+      function queryLockPassword(){ if(!ensureReady()||!isPluginInitialized){ log('请先初始化插件', 'error'); return; } log('查询锁密码...'); cordova.plugins.NFCLockPlugin.queryLockPassword(function(ok){ log('查询锁密码请求已发送: '+ok, 'success'); }, function(err){ log('查询锁密码失败: '+err, 'error'); }); }
+      function openLock(){ if(!ensureReady()||!isPluginInitialized){ log('请先初始化插件', 'error'); return; } const id=document.getElementById('displayLockId').value.trim(); const pwd=document.getElementById('displayPassword').value.trim(); if(!id||!pwd){ log('请先查询或填写锁ID/密码', 'error'); return; }
+        // 开始前先刷新一次电量
+        try { cordova.plugins.NFCLockPlugin.queryPowerLevel(()=>{},()=>{}); } catch(e){}
+        log('发送开锁...'); cordova.plugins.NFCLockPlugin.motorForward(id, pwd, function(ok){ log('开锁指令已发送: '+ok, 'success'); }, function(err){ log('开锁失败: '+err, 'error'); }); }
+      function closeLock(){ if(!ensureReady()||!isPluginInitialized){ log('请先初始化插件', 'error'); return; } const id=document.getElementById('displayLockId').value.trim(); const pwd=document.getElementById('displayPassword').value.trim(); if(!id||!pwd){ log('请先查询或填写锁ID/密码', 'error'); return; }
+        // 开始前先刷新一次电量
+        try { cordova.plugins.NFCLockPlugin.queryPowerLevel(()=>{},()=>{}); } catch(e){}
+        log('发送关锁...'); cordova.plugins.NFCLockPlugin.motorReverse(id, pwd, function(ok){ log('关锁指令已发送: '+ok, 'success'); }, function(err){ log('关锁失败: '+err, 'error'); }); }
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="title">环境状态</div>
+        <div>设备状态：<span id="env" class="badge err">未就绪</span></div>
+        <div style="margin-top:8px;">插件状态：<span id="plugin" class="badge err">未初始化</span></div>
+        <div style="margin-top:12px;" class="row">
+          <button class="btn" onclick="initPlugin()">初始化插件</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="title">查询</div>
+        <div class="row">
+          <div class="col">
+            <label>锁ID</label>
+            <input id="displayLockId" placeholder="点击按钮后自动填充或手动输入" />
+          </div>
+          <div class="col">
+            <label>锁密码</label>
+            <input id="displayPassword" placeholder="点击按钮后自动填充或手动输入" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn" onclick="queryLockId()">查询锁ID</button>
+          <button class="btn" onclick="queryLockPassword()">查询锁密码</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="title">开关锁控制</div>
+        <div class="row">
+          <button class="btn success" onclick="openLock()">开锁</button>
+          <button class="btn warn" onclick="closeLock()">关锁</button>
+        </div>
+        <div style="margin-top:12px;" class="status">状态：<span id="unlockStatus">-</span></div>
+        <div style="margin-top:8px;" class="status">电量：<span id="powerLevel">-</span></div>
+      </div>
+
+      <div class="card">
+        <div class="title">调试日志</div>
+        <div id="log" class="log"></div>
+      </div>
+    </div>
+  </body>
+  </html>
+
+
