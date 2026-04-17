@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<plugin id="cordova-plugin-nfc-lock" version="1.0.0" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
+    <name>NFCLockPlugin</name>
+    <js-module name="NFCLockPlugin" src="www/NFCLockPlugin.js">
+        <clobbers target="cordova.plugins.NFCLockPlugin" />
+    </js-module><platform name="android">
+    <config-file parent="/*" target="res/xml/config.xml">
+        <feature name="NFCLockPlugin">
+            <param name="android-package" value="com.nfclock.plugin.NFCLockPlugin" />
+        </feature>
+    </config-file>
+    <config-file parent="/*" target="AndroidManifest.xml">
+
+    </config-file>
+    <!-- 指定源文件 -->
+    <source-file src="src/android/NFCLockPlugin.java" target-dir="src/com/nfclock/plugin/" />
+    <!-- 关键：引入SDK的JAR包 -->
+    <lib-file src="src/android/libs/nfc-lock-protocol-1.0.0.jar" />
+
+    <!-- 申请NFC权限 -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="true" /></platform>
+</plugin>

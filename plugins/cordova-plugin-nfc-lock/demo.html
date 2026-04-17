@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC 锁插件演示</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            flex: 1;
+            min-width: 120px;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #1e7e34;
+        }
+        
+        .btn-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-warning:hover {
+            background-color: #e0a800;
+        }
+        
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        
+        .btn-info {
+            background-color: #17a2b8;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background-color: #138496;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        
+        .log-entry.success {
+            color: #28a745;
+        }
+        
+        .log-entry.error {
+            color: #dc3545;
+        }
+        
+        .log-entry.info {
+            color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 NFC 锁插件演示</h1>
+        
+        <div class="form-group">
+            <label for="lockId">锁 ID:</label>
+            <input type="text" id="lockId" placeholder="请输入锁的 ID" value="LOCK001">
+        </div>
+        
+        <div class="form-group">
+            <label for="password">密码:</label>
+            <input type="password" id="password" placeholder="请输入锁的密码" value="123456">
+        </div>
+        
+        <div class="form-group">
+            <label for="newPassword">新密码 (用于修改密码):</label>
+            <input type="password" id="newPassword" placeholder="请输入新密码" value="654321">
+        </div>
+        
+        <div class="button-group">
+            <button class="btn-primary" onclick="initPlugin()">初始化插件</button>
+            <button class="btn-success" onclick="openLock()">开锁 (正转)</button>
+            <button class="btn-warning" onclick="closeLock()">关锁 (反转)</button>
+            <button class="btn-danger" onclick="stopMotor()">停止电机</button>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn-info" onclick="queryLockId()">查询锁ID</button>
+            <button class="btn-info" onclick="queryVersion()">查询版本</button>
+            <button class="btn-info" onclick="setLockId()">设置锁ID</button>
+            <button class="btn-info" onclick="queryPassword()">查询密码</button>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn-info" onclick="setPasswordFirst()">设置密码(方式一)</button>
+            <button class="btn-info" onclick="setPasswordSecond()">设置密码(方式二)</button>
+            <button class="btn-info" onclick="clearPassword()">清除密码</button>
+            <button class="btn-info" onclick="queryPowerLevel()">查询电量</button>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn-info" onclick="startReadNFC()">开始读取NFC</button>
+            <button class="btn-info" onclick="stopReadNFC()">停止读取NFC</button>
+            <button class="btn-info" onclick="checkNFC()">检查 NFC</button>
+            <button class="btn-info" onclick="getLockInfo()">获取锁信息</button>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div class="log">
+            <div id="logContainer">
+                <div class="log-entry info">等待操作...</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript" src="cordova.js"></script>
+    <script type="text/javascript">
+        // 全局变量
+        let isPluginInitialized = false;
+        
+        // 页面加载完成后初始化
+        document.addEventListener('deviceready', function() {
+            log('设备已准备就绪', 'info');
+            initPlugin();
+        }, false);
+        
+        // 日志函数
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        // 显示状态
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+        
+        // 初始化插件
+        function initPlugin() {
+            if (typeof cordova === 'undefined' || !cordova.plugins.NFCLockPlugin) {
+                log('错误: Cordova 或 NFC 锁插件未加载', 'error');
+                showStatus('插件未加载', 'error');
+                return;
+            }
+            
+            cordova.plugins.NFCLockPlugin.init(
+                function(success) {
+                    log('插件初始化成功: ' + success, 'success');
+                    isPluginInitialized = true;
+                    showStatus('插件初始化成功', 'success');
+                    
+                    // 注册全局回调
+                    registerGlobalCallback();
+                },
+                function(error) {
+                    log('插件初始化失败: ' + error, 'error');
+                    showStatus('插件初始化失败', 'error');
+                }
+            );
+        }
+        
+        // 注册全局回调
+        function registerGlobalCallback() {
+            cordova.plugins.NFCLockPlugin.registerCallback(
+                function(result) {
+                    log('收到锁响应: ' + JSON.stringify(result), 'info');
+                    
+                    // 处理不同类型的响应
+                    if (result.type === 'rawData') {
+                        log('收到原始数据: ' + result.data, 'info');
+                    } else if (result.type === 'dataVerify') {
+                        if (result.valid) {
+                            log('数据校验成功', 'success');
+                        } else {
+                            log('数据校验失败: ' + result.error, 'error');
+                            showStatus('数据校验失败', 'error');
+                        }
+                    } else if (result.error) {
+                        log('操作错误: ' + result.message, 'error');
+                        showStatus('操作错误: ' + result.message, 'error');
+                    } else {
+                        // 处理电量查询响应
+                        if (result.powerLevel !== undefined) {
+                            log('电量: ' + result.powerLevel + '%, 状态: ' + result.lockState, 'info');
+                            if (result.powerLevel === '100') {
+                                showStatus('电量充足，可以执行电机操作', 'success');
+                            } else {
+                                showStatus('电量不足，正在充电中...', 'warning');
+                            }
+                        }
+                        
+                        // 处理锁ID查询响应
+                        if (result.lockId && result.respCmdType === 0x102) {
+                            log('查询到锁ID: ' + result.lockId, 'success');
+                            showStatus('锁ID: ' + result.lockId, 'success');
+                        }
+                        
+                        // 处理版本查询响应
+                        if (result.versionName && result.respCmdType === 0x115) {
+                            log('固件版本: ' + result.versionName, 'success');
+                            showStatus('版本: ' + result.versionName, 'success');
+                        }
+                        
+                        // 处理密码查询响应
+                        if (result.lockPassword && result.respCmdType === 0x111) {
+                            log('查询到密码: ' + result.lockPassword, 'success');
+                            showStatus('密码: ' + result.lockPassword, 'success');
+                        }
+                        
+                        // 处理电机操作响应
+                        if (result.respCmdType === 0x119 || result.respCmdType === 0x11b) {
+                            if (result.success) {
+                                const operation = result.respCmdType === 0x119 ? '开锁' : '关锁';
+                                log(operation + '成功!', 'success');
+                                showStatus(operation + '成功!', 'success');
+                            } else {
+                                const operation = result.respCmdType === 0x119 ? '开锁' : '关锁';
+                                log(operation + '失败!', 'error');
+                                showStatus(operation + '失败!', 'error');
+                            }
+                        }
+                        
+                        // 处理其他成功响应
+                        if (result.success && !result.powerLevel && !result.lockId && !result.versionName && !result.lockPassword) {
+                            showStatus('操作成功!', 'success');
+                        }
+                    }
+                },
+                function(error) {
+                    log('回调错误: ' + error, 'error');
+                    showStatus('回调错误', 'error');
+                }
+            );
+        }
+        
+        // 开锁 (电机正转)
+        function openLock() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const lockId = document.getElementById('lockId').value;
+            const password = document.getElementById('password').value;
+            
+            if (!lockId || !password) {
+                showStatus('请输入锁ID和密码', 'error');
+                return;
+            }
+            
+            log('发送开锁指令...', 'info');
+            cordova.plugins.NFCLockPlugin.motorForward(
+                lockId,
+                password,
+                function(success) {
+                    log('开锁指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('开锁指令发送失败: ' + error, 'error');
+                    showStatus('开锁指令发送失败', 'error');
+                }
+            );
+        }
+        
+        // 关锁 (电机反转)
+        function closeLock() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const lockId = document.getElementById('lockId').value;
+            const password = document.getElementById('password').value;
+            
+            if (!lockId || !password) {
+                showStatus('请输入锁ID和密码', 'error');
+                return;
+            }
+            
+            log('发送关锁指令...', 'info');
+            cordova.plugins.NFCLockPlugin.motorReverse(
+                lockId,
+                password,
+                function(success) {
+                    log('关锁指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('关锁指令发送失败: ' + error, 'error');
+                    showStatus('关锁指令发送失败', 'error');
+                }
+            );
+        }
+        
+        // 停止电机
+        function stopMotor() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const lockId = document.getElementById('lockId').value;
+            const password = document.getElementById('password').value;
+            
+            if (!lockId || !password) {
+                showStatus('请输入锁ID和密码', 'error');
+                return;
+            }
+            
+            log('发送停止电机指令...', 'info');
+            cordova.plugins.NFCLockPlugin.motorStop(
+                lockId,
+                password,
+                function(success) {
+                    log('停止电机指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('停止电机指令发送失败: ' + error, 'error');
+                    showStatus('停止电机指令发送失败', 'error');
+                }
+            );
+        }
+        
+        // 查询锁状态
+        function queryStatus() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const lockId = document.getElementById('lockId').value;
+            const password = document.getElementById('password').value;
+            
+            if (!lockId || !password) {
+                showStatus('请输入锁ID和密码', 'error');
+                return;
+            }
+            
+            log('查询锁状态...', 'info');
+            cordova.plugins.NFCLockPlugin.queryLockStatus(
+                lockId,
+                password,
+                function(success) {
+                    log('查询状态指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('查询状态指令发送失败: ' + error, 'error');
+                    showStatus('查询状态指令发送失败', 'error');
+                }
+            );
+        }
+        
+        // 修改密码
+        function changePassword() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const lockId = document.getElementById('lockId').value;
+            const password = document.getElementById('password').value;
+            const newPassword = document.getElementById('newPassword').value;
+            
+            if (!lockId || !password || !newPassword) {
+                showStatus('请输入锁ID、原密码和新密码', 'error');
+                return;
+            }
+            
+            log('修改密码...', 'info');
+            cordova.plugins.NFCLockPlugin.setPassword(
+                lockId,
+                password,
+                newPassword,
+                function(success) {
+                    log('修改密码指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('修改密码指令发送失败: ' + error, 'error');
+                    showStatus('修改密码指令发送失败', 'error');
+                }
+            );
+        }
+        
+        // 检查 NFC 是否可用
+        function checkNFC() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('检查 NFC 可用性...', 'info');
+            cordova.plugins.NFCLockPlugin.isNFCAvailable(
+                function(available) {
+                    const message = available ? 'NFC 可用' : 'NFC 不可用';
+                    log(message, available ? 'success' : 'error');
+                    showStatus(message, available ? 'success' : 'error');
+                },
+                function(error) {
+                    log('检查 NFC 失败: ' + error, 'error');
+                    showStatus('检查 NFC 失败', 'error');
+                }
+            );
+        }
+        
+        // 获取锁信息
+        function getLockInfo() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('获取锁信息...', 'info');
+            cordova.plugins.NFCLockPlugin.getCurrentLockInfo(
+                function(info) {
+                    log('锁信息: ' + JSON.stringify(info), 'info');
+                    showStatus('锁信息获取成功', 'success');
+                },
+                function(error) {
+                    log('获取锁信息失败: ' + error, 'error');
+                    showStatus('获取锁信息失败', 'error');
+                }
+            );
+        }
+        
+        // 查询锁ID
+        function queryLockId() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('查询锁ID...', 'info');
+            cordova.plugins.NFCLockPlugin.queryLockId(
+                function(success) {
+                    log('查询锁ID指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('查询锁ID失败: ' + error, 'error');
+                    showStatus('查询锁ID失败', 'error');
+                }
+            );
+        }
+        
+        // 查询版本
+        function queryVersion() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('查询版本...', 'info');
+            cordova.plugins.NFCLockPlugin.queryVersion(
+                function(success) {
+                    log('查询版本指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('查询版本失败: ' + error, 'error');
+                    showStatus('查询版本失败', 'error');
+                }
+            );
+        }
+        
+        // 设置锁ID
+        function setLockId() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const lockId = prompt('请输入要设置的锁ID:', '00000001');
+            if (!lockId) return;
+            
+            log('设置锁ID: ' + lockId, 'info');
+            cordova.plugins.NFCLockPlugin.setLockId(
+                lockId,
+                function(success) {
+                    log('设置锁ID指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('设置锁ID失败: ' + error, 'error');
+                    showStatus('设置锁ID失败', 'error');
+                }
+            );
+        }
+        
+        // 查询密码
+        function queryPassword() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('查询密码...', 'info');
+            cordova.plugins.NFCLockPlugin.queryPassword(
+                function(success) {
+                    log('查询密码指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('查询密码失败: ' + error, 'error');
+                    showStatus('查询密码失败', 'error');
+                }
+            );
+        }
+        
+        // 设置密码（方式一）
+        function setPasswordFirst() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const password = prompt('请输入新密码:', '123456');
+            if (!password) return;
+            
+            log('设置密码(方式一): ' + password, 'info');
+            cordova.plugins.NFCLockPlugin.setPasswordFirst(
+                password,
+                function(success) {
+                    log('设置密码指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('设置密码失败: ' + error, 'error');
+                    showStatus('设置密码失败', 'error');
+                }
+            );
+        }
+        
+        // 设置密码（方式二）
+        function setPasswordSecond() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            const lockId = prompt('请输入锁ID:', '00000001');
+            if (!lockId) return;
+            
+            const oldPassword = prompt('请输入旧密码:', '');
+            const newPassword = prompt('请输入新密码:', '123456');
+            if (!newPassword) return;
+            
+            log('设置密码(方式二): ' + lockId + ', ' + oldPassword + ', ' + newPassword, 'info');
+            cordova.plugins.NFCLockPlugin.setPasswordSecond(
+                lockId,
+                oldPassword,
+                newPassword,
+                function(success) {
+                    log('设置密码指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('设置密码失败: ' + error, 'error');
+                    showStatus('设置密码失败', 'error');
+                }
+            );
+        }
+        
+        // 清除密码
+        function clearPassword() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            if (!confirm('确定要清除密码吗？')) return;
+            
+            log('清除密码...', 'info');
+            cordova.plugins.NFCLockPlugin.clearPassword(
+                function(success) {
+                    log('清除密码指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('清除密码失败: ' + error, 'error');
+                    showStatus('清除密码失败', 'error');
+                }
+            );
+        }
+        
+        // 查询电量
+        function queryPowerLevel() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('查询电量...', 'info');
+            cordova.plugins.NFCLockPlugin.queryPowerLevel(
+                function(success) {
+                    log('查询电量指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('查询电量失败: ' + error, 'error');
+                    showStatus('查询电量失败', 'error');
+                }
+            );
+        }
+        
+        // 开始读取NFC
+        function startReadNFC() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('开始读取NFC...', 'info');
+            cordova.plugins.NFCLockPlugin.startReadNFC(
+                function(success) {
+                    log('开始读取NFC指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('开始读取NFC失败: ' + error, 'error');
+                    showStatus('开始读取NFC失败', 'error');
+                }
+            );
+        }
+        
+        // 停止读取NFC
+        function stopReadNFC() {
+            if (!isPluginInitialized) {
+                showStatus('请先初始化插件', 'error');
+                return;
+            }
+            
+            log('停止读取NFC...', 'info');
+            cordova.plugins.NFCLockPlugin.stopReadNFC(
+                function(success) {
+                    log('停止读取NFC指令已发送: ' + success, 'success');
+                },
+                function(error) {
+                    log('停止读取NFC失败: ' + error, 'error');
+                    showStatus('停止读取NFC失败', 'error');
+                }
+            );
+        }
+    </script>
+</body>
+</html>
+
+

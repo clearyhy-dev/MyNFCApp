@@ -1,0 +1,32 @@
+{
+  "name": "cordova-plugin-nfc-lock",
+  "version": "1.0.0",
+  "description": "Cordova plugin for NFC Lock functionality",
+  "main": "www/NFCLockPlugin.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cordova",
+    "nfc",
+    "lock",
+    "plugin"
+  ],
+  "author": "NFC Lock Development Team",
+  "license": "Apache-2.0",
+  "cordova": {
+    "id": "cordova-plugin-nfc-lock",
+    "platforms": [
+      "android"
+    ]
+  },
+  "engines": {
+    "cordovaDependencies": {
+      "1.0.0": {
+        "cordova": ">=3.0.0"
+      }
+    }
+  }
+}
+
+

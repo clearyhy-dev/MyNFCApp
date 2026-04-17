@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC 门锁管理系统 - H5 版本</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .status-section {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-label {
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .status-value {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+
+        .display-section {
+            margin-bottom: 30px;
+        }
+
+        .display-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .display-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .display-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #495057;
+            font-family: 'Courier New', monospace;
+        }
+
+        .button-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 15px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn.loading {
+            color: transparent;
+        }
+
+        .btn.loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid transparent;
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        .log-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .log-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 10px;
+        }
+
+        .log-content {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            line-height: 1.4;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2d3748;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+        
+        .toast.success {
+            background: #48bb78;
+        }
+        
+        .toast.error {
+            background: #f56565;
+        }
+        
+        .toast.warning {
+            background: #ed8936;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 NFC锁管理</h1>
+            <p>H5 版本 - 直接调用父页面函数</p>
+        </div>
+        
+        <div class="status-section">
+            <div class="status-item">
+                <span class="status-label">连接状态</span>
+                <span class="status-value status-warning" id="connectionStatus">等待连接...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">插件状态</span>
+                <span class="status-value status-warning" id="pluginStatus">未初始化</span>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="display-section">
+                <div class="display-item">
+                    <div class="display-label">锁ID</div>
+                    <div class="display-value" id="displayLockId">未查询</div>
+            </div>
+                <div class="display-item">
+                    <div class="display-label">锁密码</div>
+                    <div class="display-value" id="displayPassword">未查询</div>
+            </div>
+            </div>
+            
+            <div class="button-grid">
+                <button class="btn" id="btnQueryLockId" onclick="queryLockId()">查询锁ID</button>
+                <button class="btn" id="btnQueryPassword" onclick="queryLockPassword()">查询密码</button>
+                <button class="btn" id="btnOpenLock" onclick="openLock()">开锁</button>
+                <button class="btn" id="btnCloseLock" onclick="closeLock()">关锁</button>
+                <button class="btn" onclick="initPlugin()" style="grid-column: 1 / -1; margin-top: 10px;">初始化插件</button>
+            </div>
+            
+            <div class="log-section">
+                <div class="log-title">操作日志</div>
+                <div class="log-content" id="logContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    
+    <script>
+        // 全局变量
+        let isConnectedToParent = false;
+        let isPluginInitialized = false;
+        let lastOperationTime = 0;
+        const OPERATION_INTERVAL = 2000; // 2秒间隔
+        let currentLoadingButton = null;
+        let buttonOriginalContent = {};
+        
+        // 日志功能
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            console.log(`[${timestamp}] ${message}`); // 同时输出到控制台
+            
+            const logContent = document.getElementById('logContent');
+            if (logContent) {
+                const logEntry = document.createElement('div');
+                logEntry.innerHTML = `[${timestamp}] ${message}`;
+                logContent.appendChild(logEntry);
+                logContent.scrollTop = logContent.scrollHeight;
+            } else {
+                console.warn('日志容器未找到');
+            }
+        }
+        
+        // Toast提示
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            if (toast) {
+                toast.textContent = message;
+                toast.className = `toast ${type} show`;
+                
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000);
+            }
+        }
+        
+        // 更新状态显示
+        function updateStatus(elementId, text, type) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+                element.className = `status-value status-${type}`;
+            }
+        }
+        
+        // 检查操作间隔
+        function checkOperationInterval() {
+            const now = Date.now();
+            if (now - lastOperationTime < OPERATION_INTERVAL) {
+                const remainingTime = Math.ceil((OPERATION_INTERVAL - (now - lastOperationTime)) / 1000);
+                showToast(`请等待 ${remainingTime} 秒后再操作`, 'warning');
+                return false;
+            }
+            lastOperationTime = now;
+            return true;
+        }
+        
+        // 存储按钮原始内容
+        function storeButtonOriginalContent() {
+            const buttons = ['btnQueryLockId', 'btnQueryPassword', 'btnOpenLock', 'btnCloseLock'];
+            buttons.forEach(buttonId => {
+                const button = document.getElementById(buttonId);
+                if (button) {
+                    buttonOriginalContent[buttonId] = button.textContent;
+                }
+            });
+        }
+        
+        // 设置按钮加载状态
+        function setButtonLoading(buttonId, loading) {
+            const button = document.getElementById(buttonId);
+            if (!button) return;
+
+            if (loading) {
+                currentLoadingButton = buttonId;
+                button.disabled = true;
+                button.classList.add('loading');
+            } else {
+                currentLoadingButton = null;
+                button.disabled = false;
+                button.classList.remove('loading');
+                button.textContent = buttonOriginalContent[buttonId];
+            }
+        }
+        
+        // 检测父页面连接和可用函数
+        function detectParentConnection() {
+            const hasParent = window.parent && window.parent !== window;
+            const hasCordova = hasParent && window.parent.cordova;
+            const hasNFCPlugin = hasCordova && window.parent.cordova.plugins && window.parent.cordova.plugins.NFCLockPlugin;
+            const hasFunctions = hasParent && typeof window.parent.queryLockId === 'function';
+            
+            log('父页面连接检测:', 'info');
+            log('- 是否有父页面: ' + hasParent, 'info');
+            log('- 是否有Cordova: ' + hasCordova, 'info');
+            log('- 是否有NFC插件: ' + hasNFCPlugin, 'info');
+            log('- 是否有函数: ' + hasFunctions, 'info');
+            
+            if (hasParent && (hasNFCPlugin || hasFunctions)) {
+                log('检测到父页面，可以直接调用函数', 'success');
+                updateStatus('connectionStatus', '已连接', 'success');
+                isConnectedToParent = true;
+                return true;
+            } else {
+                log('未检测到父页面或无法调用函数', 'error');
+                updateStatus('connectionStatus', '未连接', 'error');
+                isConnectedToParent = false;
+                return false;
+            }
+        }
+        
+        // 直接调用父页面的函数
+        function callParentFunction(functionName, ...args) {
+            if (!isConnectedToParent) {
+                log('未连接到父页面，无法调用函数', 'error');
+                showToast('未连接到父页面', 'error');
+                return;
+            }
+            
+            try {
+                if (typeof window.parent[functionName] === 'function') {
+                    log(`调用父页面函数: ${functionName}`, 'info');
+                    return window.parent[functionName](...args);
+                } else {
+                    log(`父页面函数不存在: ${functionName}`, 'error');
+                    showToast(`函数不存在: ${functionName}`, 'error');
+                }
+            } catch (error) {
+                log('调用父页面函数失败: ' + error.message, 'error');
+                showToast('调用函数失败', 'error');
+            }
+        }
+        
+        // 设置父页面响应监听（用于接收回调）
+        function setupParentListener() {
+            // 监听父页面的全局回调
+            if (window.parent && window.parent.handleNFCResponse) {
+                // 保存原始的 handleNFCResponse 函数
+                const originalHandleNFCResponse = window.parent.handleNFCResponse;
+                
+                // 重写父页面的 handleNFCResponse 函数
+                window.parent.handleNFCResponse = function(result) {
+                    // 先调用原始函数
+                    if (originalHandleNFCResponse) {
+                        originalHandleNFCResponse(result);
+                    }
+                    
+                    // 处理 H5 页面的响应
+                    handleParentResponse(result);
+                };
+                
+                log('已设置父页面响应监听', 'success');
+            } else {
+                log('父页面没有 handleNFCResponse 函数', 'warning');
+            }
+        }
+        
+        // 处理父页面的响应
+        function handleParentResponse(result) {
+            log('收到父页面响应: ' + JSON.stringify(result), 'info');
+            
+            if (result && typeof result === 'object') {
+                // 处理锁ID响应
+                if (result.lockId) {
+                    updateDisplay('displayLockId', result.lockId);
+                    log('收到锁ID: ' + result.lockId, 'success');
+                    showToast('查询锁ID成功: ' + result.lockId, 'success');
+                    setButtonLoading('btnQueryLockId', false);
+                }
+                
+                // 处理密码响应
+                if (result.lockPassword) {
+                    updateDisplay('displayPassword', result.lockPassword);
+                    log('收到锁密码: ' + result.lockPassword, 'success');
+                    showToast('查询锁密码成功: ' + result.lockPassword, 'success');
+                    setButtonLoading('btnQueryPassword', false);
+                }
+                
+                // 处理开锁响应
+                if (result.type === 'motorForward') {
+                    log('开锁成功', 'success');
+                    showToast('开锁成功', 'success');
+                    setButtonLoading('btnOpenLock', false);
+                }
+                
+                // 处理关锁响应
+                if (result.type === 'motorReverse') {
+                    log('关锁成功', 'success');
+                    showToast('关锁成功', 'success');
+                    setButtonLoading('btnCloseLock', false);
+                }
+            }
+        }
+        
+        // 更新显示内容
+        function updateDisplay(elementId, value) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = value;
+            }
+        }
+        
+        // NFC功能函数 - 直接调用父页面函数
+        function queryLockId() {
+            log('用户点击查询锁ID按钮', 'info');
+            
+            if (!checkOperationInterval()) {
+                return;
+            }
+            
+            if (!isConnectedToParent) {
+                showToast('未连接到父页面', 'error');
+                return;
+            }
+            
+            log('开始查询锁ID', 'info');
+            setButtonLoading('btnQueryLockId', true);
+            callParentFunction('queryLockId');
+        }
+
+        function queryLockPassword() {
+            log('用户点击查询锁密码按钮', 'info');
+            
+            if (!checkOperationInterval()) {
+                return;
+            }
+            
+            if (!isConnectedToParent) {
+                showToast('未连接到父页面', 'error');
+                return;
+            }
+            
+            log('开始查询锁密码', 'info');
+            setButtonLoading('btnQueryPassword', true);
+            callParentFunction('queryLockPassword');
+        }
+
+        function openLock() {
+            log('用户点击开锁按钮', 'info');
+            
+            if (!checkOperationInterval()) {
+                return;
+            }
+            
+            if (!isConnectedToParent) {
+                showToast('未连接到父页面', 'error');
+                return;
+            }
+            
+            const lockId = document.getElementById('displayLockId').textContent;
+            const password = document.getElementById('displayPassword').textContent;
+            
+            log('开锁参数检查 - 锁ID: ' + lockId + ', 密码: ' + password, 'info');
+            
+            if (lockId === '未查询' || password === '未查询') {
+                showToast('请先查询锁ID和密码', 'warning');
+                log('开锁失败：缺少锁ID或密码', 'warning');
+                return;
+            }
+            
+            log('开始开锁操作', 'info');
+            setButtonLoading('btnOpenLock', true);
+            callParentFunction('openLock');
+        }
+
+        function closeLock() {
+            log('用户点击关锁按钮', 'info');
+            
+            if (!checkOperationInterval()) {
+                return;
+            }
+            
+            if (!isConnectedToParent) {
+                showToast('未连接到父页面', 'error');
+                return;
+            }
+            
+            const lockId = document.getElementById('displayLockId').textContent;
+            const password = document.getElementById('displayPassword').textContent;
+            
+            log('关锁参数检查 - 锁ID: ' + lockId + ', 密码: ' + password, 'info');
+            
+            if (lockId === '未查询' || password === '未查询') {
+                showToast('请先查询锁ID和密码', 'warning');
+                log('关锁失败：缺少锁ID或密码', 'warning');
+                return;
+            }
+            
+            log('开始关锁操作', 'info');
+            setButtonLoading('btnCloseLock', true);
+            callParentFunction('closeLock');
+        }
+        
+        function initPlugin() {
+            log('用户点击初始化插件按钮', 'info');
+            
+            if (!isConnectedToParent) {
+                showToast('未连接到父页面', 'error');
+                return;
+            }
+            
+            log('请求父页面初始化插件', 'info');
+            callParentFunction('initPlugin');
+        }
+        
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            log('H5 页面加载完成', 'info');
+            
+            // 存储按钮原始内容
+            storeButtonOriginalContent();
+            
+            // 检测父页面连接
+            detectParentConnection();
+            
+            // 设置父页面消息监听
+            setupParentListener();
+            
+            // 测试日志功能
+            log('H5 页面初始化完成', 'success');
+        });
+    </script>
+</body>
+</html>

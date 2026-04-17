@@ -1,0 +1,10 @@
+{
+  "cordova-plugin-nfc-lock": {
+    "source": {
+      "type": "registry",
+      "id": "cordova-plugin-nfc-lock@latest"
+    },
+    "is_top_level": true,
+    "variables": {}
+  }
+}

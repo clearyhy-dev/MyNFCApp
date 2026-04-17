@@ -1,0 +1,53 @@
+{
+  "prepare_queue": {
+    "installed": [],
+    "uninstalled": []
+  },
+  "config_munge": {
+    "files": {
+      "res/xml/config.xml": {
+        "parents": {
+          "/*": [
+            {
+              "xml": "<feature name=\"NFCLockPlugin\"><param name=\"android-package\" value=\"com.nfclock.plugin.NFCLockPlugin\" /></feature>",
+              "count": 1
+            }
+          ]
+        }
+      },
+      "AndroidManifest.xml": {
+        "parents": {
+          "/*": [
+            {
+              "xml": "<uses-permission android:name=\"android.permission.NFC\" />",
+              "count": 1
+            },
+            {
+              "xml": "<uses-feature android:name=\"android.hardware.nfc\" android:required=\"true\" />",
+              "count": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  "installed_plugins": {
+    "cordova-plugin-nfc-lock": {
+      "PACKAGE_NAME": "com.nfclock.nfcapp"
+    }
+  },
+  "dependent_plugins": {},
+  "modules": [
+    {
+      "id": "cordova-plugin-nfc-lock.NFCLockPlugin",
+      "file": "plugins/cordova-plugin-nfc-lock/www/NFCLockPlugin.js",
+      "pluginId": "cordova-plugin-nfc-lock",
+      "clobbers": [
+        "cordova.plugins.NFCLockPlugin"
+      ]
+    }
+  ],
+  "plugin_metadata": {
+    "cordova-plugin-nfc-lock": "1.0.0"
+  }
+}

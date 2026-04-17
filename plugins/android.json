@@ -1,0 +1,15 @@
+{
+  "prepare_queue": {
+    "installed": [],
+    "uninstalled": []
+  },
+  "config_munge": {
+    "files": {}
+  },
+  "installed_plugins": {
+    "cordova-plugin-nfc-lock": {
+      "PACKAGE_NAME": "com.nfclock.nfcapp"
+    }
+  },
+  "dependent_plugins": {}
+}
