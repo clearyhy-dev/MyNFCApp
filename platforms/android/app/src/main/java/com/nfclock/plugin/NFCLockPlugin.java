@@ -230,8 +230,13 @@ public class NFCLockPlugin extends CordovaPlugin {
             this.lockPassword = password;
             this.pendingOperation = "MOTOR_FORWARD";
             
-            // 参考原生程序：直接发送查询电量命令，不需要先调用startReadNFCTag
-            NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_FORWARD);
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_FORWARD);
+                    android.util.Log.d("NFCLockPlugin", "开锁流程已触发（重置读卡会话后）");
+                }
+            });
             
             android.util.Log.d("NFCLockPlugin", "电机正转-查询电量指令已发送");
             callbackContext.success("电机正转-查询电量指令已发送，请将NFC卡靠近设备");
@@ -253,8 +258,13 @@ public class NFCLockPlugin extends CordovaPlugin {
             this.lockPassword = password;
             this.pendingOperation = "MOTOR_REVERSE";
             
-            // 参考原生程序：直接发送查询电量命令，不需要先调用startReadNFCTag
-            NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_REVERSE);
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_REVERSE);
+                    android.util.Log.d("NFCLockPlugin", "关锁流程已触发（重置读卡会话后）");
+                }
+            });
             
             android.util.Log.d("NFCLockPlugin", "电机反转-查询电量指令已发送");
             callbackContext.success("电机反转-查询电量指令已发送，请将NFC卡靠近设备");
@@ -280,8 +290,13 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            // 参考原生程序：直接发送查询命令
-            NFCLockManager.getInstance().reqQueryPowerLevel();
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryPowerLevel();
+                    android.util.Log.d("NFCLockPlugin", "查询状态已触发（重置读卡会话后）");
+                }
+            });
             android.util.Log.d("NFCLockPlugin", "查询电量及开关状态指令已发送");
             callbackContext.success("查询电量及开关状态指令已发送，请将NFC卡靠近设备");
         } catch (Exception e) {
@@ -563,6 +578,23 @@ public class NFCLockPlugin extends CordovaPlugin {
         NFCLockManager.getInstance().registerNFCLockCallBack(callback);
         }
 
+    // 重新激活读卡会话，避免连续指令时后续指令无回包
+    private void restartReadSessionAndExecute(final Runnable command) {
+        try {
+            NFCLockManager.getInstance().stopReadNFCTag(cordova.getActivity());
+        } catch (Exception e) {
+            android.util.Log.w("NFCLockPlugin", "stopReadNFCTag忽略异常: " + e.getMessage());
+        }
+
+        try {
+            NFCLockManager.getInstance().startReadNFCTag(cordova.getActivity());
+        } catch (Exception e) {
+            android.util.Log.w("NFCLockPlugin", "startReadNFCTag忽略异常: " + e.getMessage());
+        }
+
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(command, 180);
+    }
+
     // 查询锁ID
     private void queryLockId(CallbackContext callbackContext) {
         if (!isInitialized) {
@@ -571,9 +603,13 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            // 参考原生程序：直接发送查询命令，不需要先调用startReadNFCTag
-            // 因为onResume中已经调用了startReadNFCTag
-            NFCLockManager.getInstance().reqQueryLockId();
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryLockId();
+                    android.util.Log.d("NFCLockPlugin", "查询锁ID已触发（重置读卡会话后）");
+                }
+            });
             android.util.Log.d("NFCLockPlugin", "查询NFC锁ID指令已发送");
             callbackContext.success("查询NFC锁ID指令已发送，请将NFC卡靠近设备");
         } catch (Exception e) {
@@ -590,8 +626,13 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            // 参考原生程序：直接发送查询命令，不需要先调用startReadNFCTag
-            NFCLockManager.getInstance().reqQueryLockPwd();
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryLockPwd();
+                    android.util.Log.d("NFCLockPlugin", "查询锁密码已触发（重置读卡会话后）");
+                }
+            });
             android.util.Log.d("NFCLockPlugin", "查询密码指令已发送");
             callbackContext.success("查询密码指令已发送，请将NFC卡靠近设备");
         } catch (Exception e) {
