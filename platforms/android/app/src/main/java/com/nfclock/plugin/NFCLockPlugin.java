@@ -12,6 +12,8 @@ import com.xhgjky.nfc.protocol.NFCLockManager;
 import com.xhgjky.nfc.protocol.listeners.NFCLockCallBack;
 import com.xhgjky.nfc.protocol.bean.NFCLockResponse;
 
+import android.nfc.Tag;
+
 public class NFCLockPlugin extends CordovaPlugin {
 
     private CallbackContext globalCallbackContext;
@@ -573,6 +575,11 @@ public class NFCLockPlugin extends CordovaPlugin {
                             globalCallbackContext.sendPluginResult(result);
                         }
                     }
+                }
+
+                @Override
+                public void onTagDiscovered(Tag tag) {
+                    android.util.Log.d("NFCLockPlugin", "NFC标签已发现: " + (tag != null ? tag.toString() : "null"));
                 }
         };
         NFCLockManager.getInstance().registerNFCLockCallBack(callback);

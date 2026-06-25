@@ -112,6 +112,46 @@
       function registerCallback(){
         cordova.plugins.NFCLockPlugin.registerCallback(function(result){
           log('收到回调: '+JSON.stringify(result));
+          if(result && result.type==='autoFlowProgress'){
+            const step = Number(result.step || 0);
+            const msg = result.message || '自动流程进行中';
+            setAutoProgress(step, msg, result.status === 'error');
+            if(msg.indexOf('充电') >= 0){
+              updateFlowBanner(msg, 'running', false);
+            }
+            return;
+          }
+          if(result && result.type==='autoFlowComplete'){
+            autoRunning = false;
+            if(result.success){
+              if(result.lockId){
+                latestLockId = String(result.lockId);
+                document.getElementById('displayLockId').value = latestLockId;
+              }
+              if(result.lockPassword){
+                latestLockPassword = String(result.lockPassword);
+                document.getElementById('displayPassword').value = latestLockPassword;
+              }
+              if(result.motorAction === 'open'){
+                latestLockState = '0';
+                const statusEl = document.getElementById('unlockStatus');
+                if(statusEl){ statusEl.textContent = '已开锁'; statusEl.style.color = '#16a34a'; }
+              } else if(result.motorAction === 'close'){
+                latestLockState = '2';
+                const statusEl = document.getElementById('unlockStatus');
+                if(statusEl){ statusEl.textContent = '已关锁'; statusEl.style.color = '#16a34a'; }
+              }
+              log('自动流程完成', 'success');
+              setAutoProgress(4, '自动流程完成', false);
+              resetPowerUIToZero();
+              updateFlowBanner('开锁/关锁流程已完成，请点击确认。', 'success', true);
+            } else {
+              log('自动流程失败: ' + (result.message || '未知错误'), 'error');
+              setAutoProgress(0, '自动流程失败', true);
+              updateFlowBanner(result.message || '请重新尝试自动开锁或关锁。', 'error', true);
+            }
+            return;
+          }
           const respType = normalizeRespType(result);
           const isQueryIdResp = !!(result && (result.type==='queryLockId' || respType === 'RESP_QUERY_LOCK_ID'));
           const isQueryPwdResp = !!(result && (result.type==='queryLockPassword' || respType === 'RESP_QUERY_LOCK_PWD'));
@@ -311,123 +351,19 @@
         autoRunning = true;
         updateFlowBanner('自动开锁或关锁流程开始，请将手机贴在锁上并保持。', 'running', false);
         setAutoProgress(0, '自动流程开始', false);
-        try {
-          log('开始自动开锁或关锁流程：查询ID -> 查询密码 -> 查询状态 -> 执行开关锁');
-
-          setAutoProgress(1, '步骤1/4：读取锁ID（请持续贴卡）', false);
-          const idResult = await runStepWithRetry(
-            '查询锁ID',
-            2,
-            1000,
-            () => queryLockId(),
-            (resolve) => { pendingQueryLockIdResolve = resolve; },
-            (r) => !!(r && r.lockId)
-          );
-          const lockId = (idResult && idResult.lockId ? String(idResult.lockId) : '').trim();
-          if(!lockId){ throw new Error('未读取到锁ID'); }
-
-          setAutoProgress(2, '步骤2/4：读取锁密码（保持贴卡）', false);
-          const pwdResult = await runStepWithRetry(
-            '查询锁密码',
-            4,
-            1100,
-            () => queryLockPassword(),
-            (resolve) => { pendingQueryLockPasswordResolve = resolve; },
-            (r) => !!(r && r.lockPassword)
-          );
-          const lockPassword = (pwdResult && pwdResult.lockPassword ? String(pwdResult.lockPassword) : '').trim();
-          if(!lockPassword){ throw new Error('未读取到锁密码'); }
-          latestLockId = lockId;
-          latestLockPassword = lockPassword;
-
-          setAutoProgress(3, '步骤3/4：识别锁状态', false);
-          await runStepWithRetry(
-            '查询锁状态',
-            2,
-            1100,
-            () => queryLockStatusWithCredential(lockId, lockPassword),
-            (resolve) => { pendingQueryPowerResolve = resolve; },
-            (r) => !!(r && (r.lockState !== undefined && r.lockState !== null))
-          );
-          const powerResult = { lockState: latestLockState };
-          const currentCode = String(powerResult && powerResult.lockState != null ? powerResult.lockState : '');
-          if(currentCode !== '0' && currentCode !== '1' && currentCode !== '2'){
-            throw new Error('无法识别当前锁状态码（lockState=' + currentCode + '）');
+        log('开始原生自动流程：一次贴卡串联 ID -> 密码 -> 状态 -> 充电 -> 电机');
+        const startAuto = cordova.plugins.NFCLockPlugin.autoToggleLock
+          ? cordova.plugins.NFCLockPlugin.autoToggleLock.bind(cordova.plugins.NFCLockPlugin)
+          : function(success, error){ cordova.exec(success, error, 'NFCLockPlugin', 'autoToggleLock', []); };
+        startAuto(
+          function(res){ log('自动流程已启动: ' + res, 'success'); },
+          function(err){
+            autoRunning = false;
+            log('自动流程启动失败: ' + err, 'error');
+            setAutoProgress(0, '自动流程失败', true);
+            updateFlowBanner('流程执行中断，请重新尝试自动开锁或关锁。', 'error', true);
           }
-          // 兼容三种状态码：0/1/2。规则：
-          // - 0 -> 2
-          // - 2 -> 0
-          // - 1 -> 0（将1归并到“需要切换到0”的分支）
-          const targetCode = currentCode === '0' ? '2' : '0';
-          log('识别到当前锁状态码: ' + currentCode + '，目标状态码: ' + targetCode);
-
-          // 开锁/关锁前有充电过程：持续检测到100再执行动作
-          if(!(latestPowerLevel === 100)){
-            const chargeStart = Date.now();
-            const maxChargeWaitMs = 90000; // 最长等待90秒
-            setAutoProgress(3, '步骤3/4：充电中，等待电量到100%', false);
-            while(latestPowerLevel !== 100 && (Date.now() - chargeStart) < maxChargeWaitMs){
-              keepCardHint('正在充电，当前电量' + latestPowerLevel + '%，请保持贴卡');
-              log('充电检测中：当前电量' + latestPowerLevel + '%，等待达到100%...');
-              await sleep(900);
-              // 充电复查采用容错模式：单次失败不打断流程，继续下一轮轮询
-              try {
-                await withTimeout(1800, (resolve) => {
-                  pendingQueryPowerResolve = resolve;
-                  queryLockStatusWithCredential(lockId, lockPassword);
-                });
-              } catch (_e) {
-                pendingQueryPowerResolve = null;
-              }
-            }
-            if(latestPowerLevel !== 100){
-              throw new Error('充电等待超时，当前电量' + latestPowerLevel + '%，请重新尝试自动开锁或关锁');
-            }
-            log('电量已达到100%，开始执行开关锁', 'success');
-          }
-
-          // 按状态码切换，不再按“开锁/关锁”语义判断。
-          // 约定：状态码0 -> 执行关锁动作（motorReverse）以切到2；状态码1/2 -> 执行开锁动作（motorForward）以切到0。
-          const targetAction = currentCode === '0' ? 'close' : 'open';
-          setAutoProgress(4, '步骤4/4：切换状态码 ' + currentCode + ' -> ' + targetCode, false);
-          if(targetAction === 'open'){
-            log('执行状态码切换：' + currentCode + ' -> ' + targetCode + '（调用开锁动作）');
-            await runMotorActionWithRetry('开锁', () => {
-              cordova.plugins.NFCLockPlugin.motorForward(
-                lockId,
-                lockPassword,
-                function(ok){ log('开锁指令已发送: ' + ok, 'success'); },
-                function(err){ log('开锁失败: ' + err, 'error'); }
-              );
-            });
-          } else {
-            log('执行状态码切换：' + currentCode + ' -> ' + targetCode + '（调用关锁动作）');
-            await runMotorActionWithRetry('关锁', () => {
-              cordova.plugins.NFCLockPlugin.motorReverse(
-                lockId,
-                lockPassword,
-                function(ok){ log('关锁指令已发送: ' + ok, 'success'); },
-                function(err){ log('关锁失败: ' + err, 'error'); }
-              );
-            });
-          }
-
-          log('自动流程完成', 'success');
-          setAutoProgress(4, '自动流程完成', false);
-          // 每轮流程结束后将页面电量重置为0，下一轮再按新回包刷新
-          resetPowerUIToZero();
-          updateFlowBanner('开锁/关锁流程已完成，请点击确认。', 'success', true);
-        } catch (e){
-          log('自动流程失败: ' + (e && e.message ? e.message : e), 'error');
-          setAutoProgress(0, '自动流程失败', true);
-          updateFlowBanner('流程执行中断，请重新尝试自动开锁或关锁。', 'error', true);
-        } finally {
-          pendingQueryLockIdResolve = null;
-          pendingQueryLockPasswordResolve = null;
-          pendingQueryPowerResolve = null;
-          pendingMotorResolve = null;
-          autoRunning = false;
-        }
+        );
       }
     </script>
   </head>
