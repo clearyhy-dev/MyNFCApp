@@ -23,13 +23,33 @@ public class NFCLockPlugin extends CordovaPlugin {
     private boolean isNFCEnabled = false;
     private boolean isInitialized = false;
     private String pendingOperation = null; // 跟踪待执行的操作
+    private boolean autoFlowRunning = false;
+    private String autoFlowMotorAction = null;
+    private boolean manualFlowRunning = false;
+    private String manualFlowMotorAction = null;
+    private String cachedLockPassword = null;
+    private static final int AUTO_FLOW_TIMEOUT_MS = 60000;
+    private static final int MANUAL_FLOW_TIMEOUT_MS = 30000;
+    private static final int AUTO_FLOW_CHARGE_TIMEOUT_MS = 6000;
+    private static final int AUTO_FLOW_MIN_POWER_PERCENT = 85;
+    private static final int AUTO_FLOW_MAX_CHARGE_POLLS = 10;
+    private static final int READ_SESSION_DELAY_MS = 0;
+    private static final int AUTO_FLOW_STEP_DELAY_MS = 0;
+    private final android.os.Handler autoFlowHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable autoFlowTimeoutRunnable = null;
+    private Runnable autoFlowChargeTimeoutRunnable = null;
+    private Runnable manualFlowTimeoutRunnable = null;
+    private long autoFlowStartMs = 0L;
+    private long manualFlowStartMs = 0L;
+    private long autoFlowChargeStartMs = 0L;
+    private int autoFlowChargePollCount = 0;
     
-    // 响应类型常量（使用ordinal值，因为SDK返回的是枚举的ordinal）
+    // 响应类型常量（使用实际SDK返回的数值）
     private static final int RESP_QUERY_LOCK_ID = 0; // 查询NFC锁编号指令回复
     private static final int RESP_SETTING_LOCK_ID = 1; // 设置NFC锁编号回复
-    private static final int RESP_SETTING_LOCK_PWD_FIRST = 2; // 设置NFC锁密码方式一回复
-    private static final int RESP_SETTING_LOCK_PWD_SECOND = 3; // 设置NFC锁密码方式二回复
-    private static final int RESP_QUERY_LOCK_PWD = 4; // 查询NFC锁密码回复
+    private static final int RESP_QUERY_LOCK_PWD = 2; // 查询NFC锁密码回复
+    private static final int RESP_SETTING_LOCK_PWD_FIRST = 3; // 设置NFC锁密码方式一回复
+    private static final int RESP_SETTING_LOCK_PWD_SECOND = 4; // 设置NFC锁密码方式二回复
     private static final int RESP_CLEAN_LOCK_PWD = 5; // 擦除NFC锁密码回复
     private static final int RESP_QUERY_LOCK_VERSION_NAME = 6; // 查询NFC锁固件版本号回复
     private static final int RESP_QUERY_LOCK_POWER_STATE = 7; // 查询电量及开关状态回复
@@ -178,6 +198,15 @@ public class NFCLockPlugin extends CordovaPlugin {
         } else if ("removePassword".equals(action)) {
             this.removePassword(callbackContext);
             return true;
+        } else if ("autoToggleLock".equals(action)) {
+            this.autoToggleLock(callbackContext);
+            return true;
+        } else if ("manualOpenLock".equals(action)) {
+            this.manualOpenLock(callbackContext);
+            return true;
+        } else if ("manualCloseLock".equals(action)) {
+            this.manualCloseLock(callbackContext);
+            return true;
         }
         return false;
     }
@@ -232,8 +261,13 @@ public class NFCLockPlugin extends CordovaPlugin {
             this.lockPassword = password;
             this.pendingOperation = "MOTOR_FORWARD";
             
-            // 参考原生程序：直接发送查询电量命令，不需要先调用startReadNFCTag
-            NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_FORWARD);
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_FORWARD);
+                    android.util.Log.d("NFCLockPlugin", "开锁流程已触发（重置读卡会话后）");
+                }
+            });
             
             android.util.Log.d("NFCLockPlugin", "电机正转-查询电量指令已发送");
             callbackContext.success("电机正转-查询电量指令已发送，请将NFC卡靠近设备");
@@ -255,8 +289,13 @@ public class NFCLockPlugin extends CordovaPlugin {
             this.lockPassword = password;
             this.pendingOperation = "MOTOR_REVERSE";
             
-            // 参考原生程序：直接发送查询电量命令，不需要先调用startReadNFCTag
-            NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_REVERSE);
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_REVERSE);
+                    android.util.Log.d("NFCLockPlugin", "关锁流程已触发（重置读卡会话后）");
+                }
+            });
             
             android.util.Log.d("NFCLockPlugin", "电机反转-查询电量指令已发送");
             callbackContext.success("电机反转-查询电量指令已发送，请将NFC卡靠近设备");
@@ -282,8 +321,13 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            // 参考原生程序：直接发送查询命令
-            NFCLockManager.getInstance().reqQueryPowerLevel();
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryPowerLevel();
+                    android.util.Log.d("NFCLockPlugin", "查询状态已触发（重置读卡会话后）");
+                }
+            });
             android.util.Log.d("NFCLockPlugin", "查询电量及开关状态指令已发送");
             callbackContext.success("查询电量及开关状态指令已发送，请将NFC卡靠近设备");
         } catch (Exception e) {
@@ -380,9 +424,17 @@ public class NFCLockPlugin extends CordovaPlugin {
                             }
                             
                             android.util.Log.d("NFCLockPlugin", "响应类型数值: " + respTypeValue);
+                            android.util.Log.d("NFCLockPlugin", "RESP_QUERY_LOCK_ID常量值: " + RESP_QUERY_LOCK_ID);
+                            android.util.Log.d("NFCLockPlugin", "RESP_QUERY_LOCK_VERSION_NAME常量值: " + RESP_QUERY_LOCK_VERSION_NAME);
+                            android.util.Log.d("NFCLockPlugin", "RESP_QUERY_LOCK_PWD常量值: " + RESP_QUERY_LOCK_PWD);
+
+                            // 自动流程需在电机判断前先更新 pendingOperation
+                            handleAutoFlowStep(respTypeValue, response);
+                            handleManualFlowStep(respTypeValue, response);
+                            cacheLockPasswordFromResponse(respTypeValue, response);
                             
                             // 根据响应类型数值处理
-                            if (respTypeValue == RESP_QUERY_LOCK_ID) { // 0 解析查询NFC锁编号指令回复
+                            if (respTypeValue == RESP_QUERY_LOCK_ID) { // 0x102 解析查询NFC锁编号指令回复
                                 String lockId = response.getLockID();
                                 android.util.Log.d("NFCLockPlugin", "查询锁ID: " + lockId);
                                 if (lockId != null && !lockId.isEmpty()) {
@@ -404,6 +456,7 @@ public class NFCLockPlugin extends CordovaPlugin {
                                 android.util.Log.d("NFCLockPlugin", "查询锁密码: " + lockPassword);
                                 json.put("lockPassword", lockPassword);
                                 json.put("type", "queryLockPassword");
+                                json.put("respCmdType", "RESP_QUERY_LOCK_PWD");
                             } else if (respTypeValue == RESP_CLEAN_LOCK_PWD) { // 5 解析擦除NFC锁密码回复
                                 boolean passwordCleared = response.operateSuccess();
                                 android.util.Log.d("NFCLockPlugin", "擦除密码: " + passwordCleared);
@@ -439,36 +492,46 @@ public class NFCLockPlugin extends CordovaPlugin {
                                 json.put("lockState", lockState);
                                 json.put("type", "queryPowerLevel");
                                 
-                                // 参考原生项目：电量100%时才能执行电机操作
-                                if (powerLevel.equals("100")) {
+                                // 电量充足时执行电机；自动流程充电阶段由 SDK 电机查询或兜底逻辑处理
+                                if (isPowerReady(powerLevel)) {
                                     android.util.Log.d("NFCLockPlugin", "电量100%，可以执行电机操作");
                                     json.put("powerReady", true);
                                     
-                                    // 检查是否有待执行的电机操作
                                     if (lockId != null && lockPassword != null && pendingOperation != null) {
                                         android.util.Log.d("NFCLockPlugin", "电量100%，执行电机操作: " + pendingOperation);
-                                        
-                                        try {
-                                            if ("MOTOR_FORWARD".equals(pendingOperation)) {
-                                                // 发送电机正转指令
-                                                NFCLockManager.getInstance().reqMotorForwardWithPowerLevel(lockId, lockPassword);
-                                                android.util.Log.d("NFCLockPlugin", "执行电机正转指令");
-                                            } else if ("MOTOR_REVERSE".equals(pendingOperation)) {
-                                                // 发送电机反转指令
-                                                NFCLockManager.getInstance().reqMotorReverseWithPowerLevel(lockId, lockPassword);
-                                                android.util.Log.d("NFCLockPlugin", "执行电机反转指令");
-                                            }
-                                            
-                                            // 清除待执行操作
-                                            pendingOperation = null;
-                                        } catch (Exception e) {
-                                            android.util.Log.e("NFCLockPlugin", "执行电机操作失败: " + e.getMessage());
+                                        cancelAutoFlowChargeTimeout();
+                                        if (autoFlowRunning) {
+                                            sendAutoFlowProgress(4, "充电完成，正在执行电机操作");
                                         }
+                                        executePendingMotorOperation();
+                                    }
+                                } else if (autoFlowRunning && autoFlowMotorAction != null && pendingOperation != null) {
+                                    autoFlowChargePollCount++;
+                                    int powerPercent = parsePowerPercent(powerLevel);
+                                    android.util.Log.d("NFCLockPlugin", "自动流程充电中: " + powerPercent + "%");
+                                    if (shouldForceMotorDespiteCharge(powerLevel)) {
+                                        cancelAutoFlowChargeTimeout();
+                                        sendAutoFlowProgress(4, "电量" + powerPercent + "%，尝试执行电机");
+                                        executePendingMotorOperation();
+                                    }
+                                } else if (manualFlowRunning && pendingOperation != null) {
+                                    autoFlowChargePollCount++;
+                                    int powerPercent = parsePowerPercent(powerLevel);
+                                    android.util.Log.d("NFCLockPlugin", "手动流程充电中: " + powerPercent + "%");
+                                    if (autoFlowChargeStartMs == 0L) {
+                                        autoFlowChargeStartMs = System.currentTimeMillis();
+                                        scheduleAutoFlowChargeTimeout();
+                                    }
+                                    if (shouldForceMotorDespiteCharge(powerLevel)) {
+                                        cancelAutoFlowChargeTimeout();
+                                        sendManualFlowProgress(3, "电量" + powerPercent + "%，尝试执行电机");
+                                        executePendingMotorOperation();
                                     }
                                 } else {
                                     android.util.Log.d("NFCLockPlugin", "电量不足100%，开始NFC充电和轮询查询电量");
-                                    // 异步轮询查询电量及开关状态
-                                    NFCLockManager.getInstance().reqQueryPowerLevelWithLoop();
+                                    if (!autoFlowRunning || autoFlowMotorAction == null) {
+                                        NFCLockManager.getInstance().reqQueryPowerLevelWithLoop();
+                                    }
                                 }
                             } else if (respTypeValue == RESP_LOCK_MOTOR_FORWARD) { // 8 电机正转
                                 boolean motorForwardSuccess = response.motorForwardSuccess();
@@ -484,7 +547,7 @@ public class NFCLockPlugin extends CordovaPlugin {
                                 android.util.Log.d("NFCLockPlugin", "未知响应类型: " + respTypeValue);
                                 json.put("type", "unknown");
                             }
-                            
+
                             android.util.Log.d("NFCLockPlugin", "发送JSON: " + json.toString());
                             
                         PluginResult result = new PluginResult(PluginResult.Status.OK, json);
@@ -505,9 +568,31 @@ public class NFCLockPlugin extends CordovaPlugin {
                 public void onNFCLockWriteOrReadErr(Exception err, String errToast, String errTitle) {
                 // 处理错误
                     android.util.Log.e("NFCLockPlugin", "NFC读写错误: " + errToast);
+                    android.util.Log.e("NFCLockPlugin", "错误标题: " + errTitle);
+                    if (err != null) {
+                        android.util.Log.e("NFCLockPlugin", "异常详情: " + err.getMessage());
+                        err.printStackTrace();
+                    }
                 if (globalCallbackContext != null) {
-                    PluginResult result = new PluginResult(PluginResult.Status.ERROR, errToast);
-                    globalCallbackContext.sendPluginResult(result);
+                    if (autoFlowRunning) {
+                        sendAutoFlowFail(errToast != null ? errToast : "NFC读写错误");
+                    } else if (manualFlowRunning) {
+                        sendManualFlowFail(errToast != null ? errToast : "NFC读写错误");
+                    }
+                    try {
+                        JSONObject errorJson = new JSONObject();
+                        errorJson.put("success", false);
+                        errorJson.put("message", errToast);
+                        errorJson.put("title", errTitle != null ? errTitle : "NFC错误");
+                        errorJson.put("type", "error");
+                        
+                        PluginResult result = new PluginResult(PluginResult.Status.ERROR, errorJson);
+                        result.setKeepCallback(true);
+                        globalCallbackContext.sendPluginResult(result);
+                    } catch (JSONException e) {
+                        PluginResult result = new PluginResult(PluginResult.Status.ERROR, errToast);
+                        globalCallbackContext.sendPluginResult(result);
+                    }
                 }
             }
                 
@@ -520,10 +605,24 @@ public class NFCLockPlugin extends CordovaPlugin {
                 @Override
                 public void onNFCLockReadBytesVerify(boolean validData, String errToast, String errTitle) {
                     // 处理数据校验结果
-                    android.util.Log.d("NFCLockPlugin", "数据校验: " + validData);
+                    android.util.Log.d("NFCLockPlugin", "数据校验: " + validData + ", 错误: " + errToast);
                     if (!validData && globalCallbackContext != null) {
-                        PluginResult result = new PluginResult(PluginResult.Status.ERROR, errToast);
-                        globalCallbackContext.sendPluginResult(result);
+                        try {
+                            JSONObject errorJson = new JSONObject();
+                            errorJson.put("success", false);
+                            errorJson.put("message", errToast);
+                            errorJson.put("title", errTitle != null ? errTitle : "数据校验失败");
+                            errorJson.put("type", "verify_error");
+                            
+                            android.util.Log.e("NFCLockPlugin", "数据校验失败，发送错误: " + errorJson.toString());
+                            PluginResult result = new PluginResult(PluginResult.Status.ERROR, errorJson);
+                            result.setKeepCallback(true);
+                            globalCallbackContext.sendPluginResult(result);
+                        } catch (JSONException e) {
+                            PluginResult result = new PluginResult(PluginResult.Status.ERROR, errToast);
+                            result.setKeepCallback(true);
+                            globalCallbackContext.sendPluginResult(result);
+                        }
                     }
                 }
 
@@ -535,6 +634,41 @@ public class NFCLockPlugin extends CordovaPlugin {
         NFCLockManager.getInstance().registerNFCLockCallBack(callback);
         }
 
+    // 重新激活读卡会话，避免连续指令时后续指令无回包
+    private void restartReadSessionAndExecute(final Runnable command) {
+        try {
+            NFCLockManager.getInstance().stopReadNFCTag(cordova.getActivity());
+        } catch (Exception e) {
+            android.util.Log.w("NFCLockPlugin", "stopReadNFCTag忽略异常: " + e.getMessage());
+        }
+
+        try {
+            NFCLockManager.getInstance().startReadNFCTag(cordova.getActivity());
+        } catch (Exception e) {
+            android.util.Log.w("NFCLockPlugin", "startReadNFCTag忽略异常: " + e.getMessage());
+        }
+
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(command, READ_SESSION_DELAY_MS);
+    }
+
+    private void runAutoFlowCommand(final Runnable command) {
+        autoFlowHandler.postAtFrontOfQueue(command);
+    }
+
+    private void startAutoFlowSession(final Runnable command) {
+        cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    NFCLockManager.getInstance().startReadNFCTag(cordova.getActivity());
+                } catch (Exception e) {
+                    android.util.Log.w("NFCLockPlugin", "startReadNFCTag忽略异常: " + e.getMessage());
+                }
+                command.run();
+            }
+        });
+    }
+
     // 查询锁ID
     private void queryLockId(CallbackContext callbackContext) {
         if (!isInitialized) {
@@ -543,9 +677,13 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            // 参考原生程序：直接发送查询命令，不需要先调用startReadNFCTag
-            // 因为onResume中已经调用了startReadNFCTag
-            NFCLockManager.getInstance().reqQueryLockId();
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryLockId();
+                    android.util.Log.d("NFCLockPlugin", "查询锁ID已触发（重置读卡会话后）");
+                }
+            });
             android.util.Log.d("NFCLockPlugin", "查询NFC锁ID指令已发送");
             callbackContext.success("查询NFC锁ID指令已发送，请将NFC卡靠近设备");
         } catch (Exception e) {
@@ -562,8 +700,13 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            // 参考原生程序：直接发送查询命令，不需要先调用startReadNFCTag
-            NFCLockManager.getInstance().reqQueryLockPwd();
+            restartReadSessionAndExecute(new Runnable() {
+                @Override
+                public void run() {
+                    NFCLockManager.getInstance().reqQueryLockPwd();
+                    android.util.Log.d("NFCLockPlugin", "查询锁密码已触发（重置读卡会话后）");
+                }
+            });
             android.util.Log.d("NFCLockPlugin", "查询密码指令已发送");
             callbackContext.success("查询密码指令已发送，请将NFC卡靠近设备");
         } catch (Exception e) {
@@ -800,6 +943,499 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
     }
 
+    private void autoToggleLock(final CallbackContext callbackContext) {
+        if (!isInitialized) {
+            callbackContext.error("插件未初始化");
+            return;
+        }
+        if (autoFlowRunning) {
+            callbackContext.error("自动流程执行中");
+            return;
+        }
+
+        autoFlowRunning = true;
+        autoFlowMotorAction = null;
+        pendingOperation = null;
+        lockId = null;
+        lockPassword = cachedLockPassword;
+        autoFlowChargeStartMs = 0L;
+        autoFlowChargePollCount = 0;
+        cancelAutoFlowChargeTimeout();
+        autoFlowStartMs = System.currentTimeMillis();
+
+        sendAutoFlowProgress(1, "正在查询锁ID，请保持贴卡");
+        startAutoFlowSession(new Runnable() {
+            @Override
+            public void run() {
+                NFCLockManager.getInstance().reqQueryLockId();
+                android.util.Log.d("NFCLockPlugin", "自动流程：查询锁ID已触发");
+            }
+        });
+        scheduleAutoFlowTimeout("查询锁ID超时");
+        callbackContext.success("自动流程已启动");
+    }
+
+    private void cacheLockPassword(String password) {
+        if (password != null && !password.isEmpty()) {
+            cachedLockPassword = password;
+            lockPassword = password;
+            android.util.Log.d("NFCLockPlugin", "锁密码已缓存");
+        }
+    }
+
+    private void cacheLockPasswordFromResponse(int respTypeValue, NFCLockResponse response) {
+        if (respTypeValue == RESP_QUERY_LOCK_PWD) {
+            cacheLockPassword(response.getLockPwd());
+        }
+    }
+
+    private void manualOpenLock(final CallbackContext callbackContext) {
+        startManualLockFlow(callbackContext, "open", "MOTOR_FORWARD");
+    }
+
+    private void manualCloseLock(final CallbackContext callbackContext) {
+        startManualLockFlow(callbackContext, "close", "MOTOR_REVERSE");
+    }
+
+    private void startManualLockFlow(final CallbackContext callbackContext, final String motorAction, final String pendingOp) {
+        if (!isInitialized) {
+            callbackContext.error("插件未初始化");
+            return;
+        }
+        if (cachedLockPassword == null || cachedLockPassword.isEmpty()) {
+            callbackContext.error("请先执行自动开锁或关锁以缓存密码");
+            return;
+        }
+        if (autoFlowRunning) {
+            callbackContext.error("自动流程执行中");
+            return;
+        }
+        if (manualFlowRunning) {
+            callbackContext.error("手动流程执行中");
+            return;
+        }
+
+        manualFlowRunning = true;
+        manualFlowMotorAction = motorAction;
+        pendingOperation = pendingOp;
+        lockId = null;
+        lockPassword = cachedLockPassword;
+        autoFlowChargeStartMs = 0L;
+        autoFlowChargePollCount = 0;
+        cancelAutoFlowChargeTimeout();
+        manualFlowStartMs = System.currentTimeMillis();
+
+        sendManualFlowProgress(1, "open".equals(motorAction) ? "正在查询锁ID并开锁" : "正在查询锁ID并关锁");
+        startAutoFlowSession(new Runnable() {
+            @Override
+            public void run() {
+                NFCLockManager.getInstance().reqQueryLockId();
+                android.util.Log.d("NFCLockPlugin", "手动流程：查询锁ID已触发");
+            }
+        });
+        scheduleManualFlowTimeout("查询锁ID超时");
+        callbackContext.success("手动流程已启动");
+    }
+
+    private void handleManualFlowStep(int respTypeValue, NFCLockResponse response) {
+        if (!manualFlowRunning) {
+            return;
+        }
+
+        switch (respTypeValue) {
+            case RESP_QUERY_LOCK_ID: {
+                if (lockId != null && !lockId.isEmpty()) {
+                    return;
+                }
+                String id = response.getLockID();
+                if (id == null || id.isEmpty()) {
+                    sendManualFlowFail("未读取到锁ID，请重新贴卡");
+                    return;
+                }
+                lockId = id;
+                lockPassword = cachedLockPassword;
+                cancelManualFlowTimeout();
+                sendManualFlowProgress(2, "锁ID已获取，使用缓存密码执行"
+                        + ("open".equals(manualFlowMotorAction) ? "开锁" : "关锁"));
+                scheduleManualFlowTimeout("电机操作超时");
+                triggerMotorPowerQuery();
+                break;
+            }
+            case RESP_LOCK_MOTOR_FORWARD:
+            case RESP_LOCK_MOTOR_REVERSAL: {
+                cancelManualFlowTimeout();
+                cancelAutoFlowChargeTimeout();
+                boolean ok = respTypeValue == RESP_LOCK_MOTOR_FORWARD
+                        ? response.motorForwardSuccess()
+                        : response.motorReverseSuccess();
+                if (ok) {
+                    sendManualFlowComplete(true, "手动流程完成", manualFlowMotorAction);
+                } else {
+                    sendManualFlowFail("电机操作失败，请重新贴卡重试");
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    private void scheduleManualFlowTimeout(final String reason) {
+        cancelManualFlowTimeout();
+        manualFlowTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (manualFlowRunning) {
+                    sendManualFlowFail(reason + "，请重新贴卡");
+                }
+            }
+        };
+        autoFlowHandler.postDelayed(manualFlowTimeoutRunnable, MANUAL_FLOW_TIMEOUT_MS);
+    }
+
+    private void cancelManualFlowTimeout() {
+        if (manualFlowTimeoutRunnable != null) {
+            autoFlowHandler.removeCallbacks(manualFlowTimeoutRunnable);
+            manualFlowTimeoutRunnable = null;
+        }
+    }
+
+    private void sendManualFlowProgress(int step, String message) {
+        sendManualFlowEvent("manualFlowProgress", step, message, null);
+    }
+
+    private void sendManualFlowComplete(boolean success, String message, String motorAction) {
+        manualFlowRunning = false;
+        pendingOperation = null;
+        cancelManualFlowTimeout();
+        cancelAutoFlowChargeTimeout();
+        sendManualFlowEvent("manualFlowComplete", 3, message, success, motorAction);
+    }
+
+    private void sendManualFlowFail(String message) {
+        sendManualFlowComplete(false, message, null);
+    }
+
+    private void sendManualFlowEvent(String type, int step, String message, Boolean success) {
+        sendManualFlowEvent(type, step, message, success, null);
+    }
+
+    private void sendManualFlowEvent(String type, int step, String message, Boolean success, String motorAction) {
+        if (globalCallbackContext == null) {
+            return;
+        }
+        try {
+            JSONObject json = new JSONObject();
+            json.put("type", type);
+            json.put("step", step);
+            json.put("message", message);
+            if (success != null) {
+                json.put("success", success);
+            }
+            if (motorAction != null) {
+                json.put("motorAction", motorAction);
+            }
+            if (lockId != null && !lockId.isEmpty()) {
+                json.put("lockId", lockId);
+            }
+            if (cachedLockPassword != null && !cachedLockPassword.isEmpty()) {
+                json.put("lockPassword", cachedLockPassword);
+            }
+            if ("manualFlowComplete".equals(type) && manualFlowStartMs > 0L) {
+                long elapsedMs = Math.max(0L, System.currentTimeMillis() - manualFlowStartMs);
+                json.put("elapsedMs", elapsedMs);
+                json.put("elapsedSec", Math.round(elapsedMs / 100.0) / 10.0);
+            }
+
+            PluginResult result = new PluginResult(PluginResult.Status.OK, json);
+            result.setKeepCallback(true);
+            globalCallbackContext.sendPluginResult(result);
+        } catch (JSONException e) {
+            android.util.Log.e("NFCLockPlugin", "手动流程事件发送失败: " + e.getMessage());
+        }
+    }
+
+    private void handleAutoFlowStep(int respTypeValue, NFCLockResponse response) {
+        if (!autoFlowRunning) {
+            return;
+        }
+
+        switch (respTypeValue) {
+            case RESP_QUERY_LOCK_ID: {
+                if (lockId != null && !lockId.isEmpty()) {
+                    return;
+                }
+                String id = response.getLockID();
+                if (id == null || id.isEmpty()) {
+                    sendAutoFlowFail("未读取到锁ID，请重新贴卡");
+                    return;
+                }
+                lockId = id;
+                cancelAutoFlowTimeout();
+                sendAutoFlowProgress(1, "锁ID已获取，正在查询密码");
+                scheduleAutoFlowTimeout("查询密码超时");
+                runAutoFlowCommand(new Runnable() {
+                    @Override
+                    public void run() {
+                        NFCLockManager.getInstance().reqQueryLockPwd();
+                        android.util.Log.d("NFCLockPlugin", "自动流程：查询密码已触发");
+                    }
+                });
+                break;
+            }
+            case RESP_QUERY_LOCK_PWD: {
+                if (lockPassword != null && !lockPassword.isEmpty()) {
+                    return;
+                }
+                String pwd = response.getLockPwd();
+                if (pwd == null || pwd.isEmpty()) {
+                    sendAutoFlowFail("未读取到锁密码，请重新贴卡");
+                    return;
+                }
+                lockPassword = pwd;
+                cacheLockPassword(pwd);
+                cancelAutoFlowTimeout();
+                sendAutoFlowProgress(2, "密码已获取，正在查询状态");
+                scheduleAutoFlowTimeout("查询状态超时");
+                runAutoFlowCommand(new Runnable() {
+                    @Override
+                    public void run() {
+                        NFCLockManager.getInstance().reqQueryPowerLevel();
+                        android.util.Log.d("NFCLockPlugin", "自动流程：查询状态已触发");
+                    }
+                });
+                break;
+            }
+            case RESP_QUERY_LOCK_POWER_STATE:
+                cancelAutoFlowTimeout();
+                if (autoFlowMotorAction == null) {
+                    continueAutoFlowAfterPower(response);
+                    scheduleAutoFlowTimeout("电机操作超时");
+                } else if (isPowerReady(response.getLockPowerLevel()) && pendingOperation != null) {
+                    sendAutoFlowProgress(4, "充电完成，正在执行电机操作");
+                }
+                break;
+            case RESP_LOCK_MOTOR_FORWARD:
+            case RESP_LOCK_MOTOR_REVERSAL: {
+                cancelAutoFlowTimeout();
+                boolean ok = respTypeValue == RESP_LOCK_MOTOR_FORWARD
+                        ? response.motorForwardSuccess()
+                        : response.motorReverseSuccess();
+                if (ok) {
+                    sendAutoFlowComplete(true, "自动流程完成", autoFlowMotorAction);
+                } else {
+                    sendAutoFlowFail("电机操作失败，请重新贴卡重试");
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    private void continueAutoFlowAfterPower(NFCLockResponse response) {
+        String lockState = response.getLockState();
+        String powerLevel = response.getLockPowerLevel();
+        autoFlowMotorAction = resolveAutoMotorAction(lockState);
+
+        if ("close".equals(autoFlowMotorAction)) {
+            pendingOperation = "MOTOR_REVERSE";
+            sendAutoFlowProgress(3, "当前已开锁，准备关锁" + (isPowerReady(powerLevel) ? "" : "，正在充电"));
+        } else {
+            pendingOperation = "MOTOR_FORWARD";
+            sendAutoFlowProgress(3, "当前已关锁，准备开锁" + (isPowerReady(powerLevel) ? "" : "，正在充电"));
+        }
+
+        if (isPowerReady(powerLevel)) {
+            sendAutoFlowProgress(4, "电量充足，正在执行电机操作");
+        } else {
+            startAutoFlowCharge(powerLevel);
+        }
+    }
+
+    private void startAutoFlowCharge(String currentPower) {
+        autoFlowChargeStartMs = System.currentTimeMillis();
+        autoFlowChargePollCount = 0;
+        scheduleAutoFlowChargeTimeout();
+        triggerMotorPowerQuery();
+        android.util.Log.d("NFCLockPlugin", "自动流程开始充电，当前电量: " + parsePowerPercent(currentPower) + "%");
+    }
+
+    private void triggerMotorPowerQuery() {
+        if ("MOTOR_REVERSE".equals(pendingOperation)) {
+            NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_REVERSE);
+            android.util.Log.d("NFCLockPlugin", "触发关锁充电+电机查询");
+        } else {
+            NFCLockManager.getInstance().reqQueryPowerLevel(NFCLockManager.QueryPowerLevelType.QUERY_MOTOR_FORWARD);
+            android.util.Log.d("NFCLockPlugin", "触发开锁充电+电机查询");
+        }
+    }
+
+    private void scheduleAutoFlowChargeTimeout() {
+        cancelAutoFlowChargeTimeout();
+        autoFlowChargeTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (autoFlowRunning && pendingOperation != null) {
+                    android.util.Log.w("NFCLockPlugin", "充电等待超时，强制执行电机");
+                    sendAutoFlowProgress(4, "充电超时，尝试执行电机");
+                    executePendingMotorOperation();
+                }
+            }
+        };
+        autoFlowHandler.postDelayed(autoFlowChargeTimeoutRunnable, AUTO_FLOW_CHARGE_TIMEOUT_MS);
+    }
+
+    private void cancelAutoFlowChargeTimeout() {
+        if (autoFlowChargeTimeoutRunnable != null) {
+            autoFlowHandler.removeCallbacks(autoFlowChargeTimeoutRunnable);
+            autoFlowChargeTimeoutRunnable = null;
+        }
+        autoFlowChargeStartMs = 0L;
+        autoFlowChargePollCount = 0;
+    }
+
+    private boolean shouldForceMotorDespiteCharge(String powerLevel) {
+        if (!autoFlowRunning || pendingOperation == null) {
+            return false;
+        }
+        int powerPercent = parsePowerPercent(powerLevel);
+        if (powerPercent >= AUTO_FLOW_MIN_POWER_PERCENT && autoFlowChargePollCount >= 2) {
+            return true;
+        }
+        if (autoFlowChargeStartMs > 0L
+                && System.currentTimeMillis() - autoFlowChargeStartMs >= AUTO_FLOW_CHARGE_TIMEOUT_MS) {
+            return true;
+        }
+        return autoFlowChargePollCount >= AUTO_FLOW_MAX_CHARGE_POLLS;
+    }
+
+    private int parsePowerPercent(String powerLevel) {
+        if (powerLevel == null || powerLevel.trim().isEmpty()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(powerLevel.trim().replace("%", ""));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private void executePendingMotorOperation() {
+        if (lockId == null || lockPassword == null || pendingOperation == null) {
+            return;
+        }
+        try {
+            if ("MOTOR_FORWARD".equals(pendingOperation)) {
+                NFCLockManager.getInstance().reqMotorForwardWithPowerLevel(lockId, lockPassword);
+                android.util.Log.d("NFCLockPlugin", "执行电机正转指令");
+            } else if ("MOTOR_REVERSE".equals(pendingOperation)) {
+                NFCLockManager.getInstance().reqMotorReverseWithPowerLevel(lockId, lockPassword);
+                android.util.Log.d("NFCLockPlugin", "执行电机反转指令");
+            }
+            pendingOperation = null;
+        } catch (Exception e) {
+            android.util.Log.e("NFCLockPlugin", "执行电机操作失败: " + e.getMessage());
+            if (autoFlowRunning) {
+                sendAutoFlowFail("电机指令发送失败: " + e.getMessage());
+            }
+        }
+    }
+
+    private String resolveAutoMotorAction(String lockState) {
+        if (lockState == null) {
+            return "open";
+        }
+        String raw = lockState.trim();
+        if ("2".equals(raw)) {
+            return "close";
+        }
+        return "open";
+    }
+
+    private boolean isPowerReady(String powerLevel) {
+        return parsePowerPercent(powerLevel) >= 100;
+    }
+
+    private void postAutoFlowCommand(final Runnable command) {
+        runAutoFlowCommand(command);
+    }
+
+    private void scheduleAutoFlowTimeout(final String reason) {
+        cancelAutoFlowTimeout();
+        autoFlowTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (autoFlowRunning) {
+                    sendAutoFlowFail(reason + "，请重新贴卡");
+                }
+            }
+        };
+        autoFlowHandler.postDelayed(autoFlowTimeoutRunnable, AUTO_FLOW_TIMEOUT_MS);
+    }
+
+    private void cancelAutoFlowTimeout() {
+        if (autoFlowTimeoutRunnable != null) {
+            autoFlowHandler.removeCallbacks(autoFlowTimeoutRunnable);
+            autoFlowTimeoutRunnable = null;
+        }
+    }
+
+    private void sendAutoFlowProgress(int step, String message) {
+        sendAutoFlowEvent("autoFlowProgress", step, message, null);
+    }
+
+    private void sendAutoFlowComplete(boolean success, String message, String motorAction) {
+        autoFlowRunning = false;
+        pendingOperation = null;
+        cancelAutoFlowTimeout();
+        cancelAutoFlowChargeTimeout();
+        sendAutoFlowEvent("autoFlowComplete", 4, message, success, motorAction);
+    }
+
+    private void sendAutoFlowFail(String message) {
+        sendAutoFlowComplete(false, message, null);
+    }
+
+    private void sendAutoFlowEvent(String type, int step, String message, Boolean success) {
+        sendAutoFlowEvent(type, step, message, success, null);
+    }
+
+    private void sendAutoFlowEvent(String type, int step, String message, Boolean success, String motorAction) {
+        if (globalCallbackContext == null) {
+            return;
+        }
+        try {
+            JSONObject json = new JSONObject();
+            json.put("type", type);
+            json.put("step", step);
+            json.put("message", message);
+            if (success != null) {
+                json.put("success", success);
+            }
+            if (motorAction != null) {
+                json.put("motorAction", motorAction);
+            }
+            if (lockId != null && !lockId.isEmpty()) {
+                json.put("lockId", lockId);
+            }
+            if (lockPassword != null && !lockPassword.isEmpty()) {
+                json.put("lockPassword", lockPassword);
+            }
+            if ("autoFlowComplete".equals(type) && autoFlowStartMs > 0L) {
+                long elapsedMs = Math.max(0L, System.currentTimeMillis() - autoFlowStartMs);
+                json.put("elapsedMs", elapsedMs);
+                json.put("elapsedSec", Math.round(elapsedMs / 100.0) / 10.0);
+            }
+
+            PluginResult result = new PluginResult(PluginResult.Status.OK, json);
+            result.setKeepCallback(true);
+            globalCallbackContext.sendPluginResult(result);
+        } catch (JSONException e) {
+            android.util.Log.e("NFCLockPlugin", "自动流程事件发送失败: " + e.getMessage());
+        }
+    }
+
     @Override
     public void onResume(boolean multitasking) {
         super.onResume(multitasking);
@@ -823,6 +1459,11 @@ public class NFCLockPlugin extends CordovaPlugin {
     @Override
     public void onDestroy() {
         // 资源清理
+        cancelAutoFlowTimeout();
+        cancelAutoFlowChargeTimeout();
+        cancelManualFlowTimeout();
+        autoFlowRunning = false;
+        manualFlowRunning = false;
         if (isInitialized) {
         NFCLockManager.getInstance().unRegisterNFCLockCallBack();
         NFCLockManager.getInstance().onDestroy();

@@ -206,6 +206,29 @@ var NFCLockPlugin = {
      */
     stopReadNFC: function(success, error) {
         exec(success, error, 'NFCLockPlugin', 'stopReadNFC', []);
+    },
+
+    /**
+     * 自动开锁或关锁：一次贴卡串联 ID -> 密码 -> 状态 -> 充电 -> 电机
+     * @param {Function} success - 成功回调函数
+     * @param {Function} error - 错误回调函数
+     */
+    autoToggleLock: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'autoToggleLock', []);
+    },
+
+    /**
+     * 手动开锁：仅查询锁ID，使用缓存密码
+     */
+    manualOpenLock: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'manualOpenLock', []);
+    },
+
+    /**
+     * 手动关锁：仅查询锁ID，使用缓存密码
+     */
+    manualCloseLock: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'manualCloseLock', []);
     }
 };
 
