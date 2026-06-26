@@ -2,47 +2,233 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NFC 本地页面</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>聚如信</title>
     <style>
-      body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; margin:0; padding:16px; background:#f7f7f9; }
-      body.flow-active { padding-top: 96px; }
-      .container { max-width: 720px; margin: 0 auto; }
-      .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:16px; }
-      .title { font-size:18px; font-weight:600; margin-bottom:12px; }
-      .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-      .btn { padding:10px 14px; border:0; border-radius:8px; background:#007bff; color:#fff; cursor:pointer; font-size:14px; }
-      .btn.warn { background:#ffc107; color:#333; }
-      .btn.success { background:#28a745; }
-      .btn.secondary { background:#6c757d; }
-      .btn.ghost { background:#e9ecef; color:#333; }
-      .status { padding:8px 10px; background:#f8f9fa; border:1px solid #eee; border-radius:8px; font-size:13px; color:#333; }
-      .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; margin-left:8px; }
-      .badge.ok { background:#d1fae5; color:#065f46; }
-      .badge.err { background:#fee2e2; color:#991b1b; }
-      .progress-wrap { margin-top:12px; }
-      .progress-label { font-size:12px; color:#555; margin-bottom:6px; }
-      .progress-bar { width:100%; height:10px; background:#e9ecef; border-radius:999px; overflow:hidden; }
-      .progress-fill { height:100%; width:0%; background:#007bff; transition:width .25s ease; }
-      .flow-banner { position:fixed; left:12px; right:12px; top:12px; z-index:9999; background:#ffeb3b; border:1px solid #d4b200; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,.12); padding:10px 12px; display:none; }
-      .flow-banner.show { display:block; }
-      .flow-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-      .flow-text { font-size:13px; color:#111; }
-      .flow-ok { background:#16a34a; color:#fff; border:0; border-radius:8px; padding:7px 12px; font-size:12px; cursor:pointer; display:none; }
-      .timing-grid { display:block; }
-      .timing-item { background:#f8f9fa; border:1px solid #eee; border-radius:10px; padding:18px; text-align:center; }
-      .timing-value { font-size:28px; font-weight:700; color:#007bff; line-height:1.2; }
-      .timing-label { font-size:12px; color:#666; margin-top:6px; }
-      .timing-hint { margin-top:12px; font-size:12px; color:#888; line-height:1.5; }
-      .log-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
-      .log-card-head .title { margin-bottom:0; }
-      .log-actions { display:flex; gap:8px; }
-      .log { background:#0f172a; color:#e2e8f0; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; padding:12px; border-radius:8px; max-height:260px; overflow:auto; }
-      .log.collapsed { display:none; }
+      :root {
+        --bg-top: #dceefb;
+        --bg-bottom: #f4f9fd;
+        --primary: #1a4d7a;
+        --primary-light: #2d6a9f;
+        --accent: #29b6f6;
+        --accent-dark: #0288d1;
+        --card-bg: #ffffff;
+        --card-border: rgba(41, 182, 246, 0.18);
+        --card-shadow: 0 4px 16px rgba(26, 77, 122, 0.08);
+        --text-muted: #6b8aad;
+        --success: #26a69a;
+        --warn: #ffa726;
+        --danger: #ef5350;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', Roboto, sans-serif;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 280px, var(--bg-bottom) 100%);
+        color: var(--primary);
+      }
+      .page { max-width: 720px; margin: 0 auto; padding: 16px 16px 28px; }
+
+      /* 顶部欢迎区 */
+      .hero {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 4px 20px;
+        min-height: 120px;
+      }
+      .hero-text { flex: 1; min-width: 0; }
+      .welcome { margin: 0 0 4px; font-size: 14px; color: var(--text-muted); }
+      .app-name {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--primary);
+        letter-spacing: 1px;
+      }
+      .app-sub { margin: 6px 0 10px; font-size: 13px; color: var(--primary-light); }
+      .status-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        background: rgba(255,255,255,.75);
+        border: 1px solid var(--card-border);
+        color: var(--primary-light);
+      }
+      .chip.ok { color: #0d7a6e; background: rgba(38,166,154,.12); border-color: rgba(38,166,154,.25); }
+      .chip.err { color: #c62828; background: rgba(239,83,80,.1); border-color: rgba(239,83,80,.2); }
+      .hero-lock {
+        flex: 0 0 100px;
+        width: 100px;
+        height: 100px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .hero-lock svg { width: 100%; height: 100%; filter: drop-shadow(0 6px 12px rgba(41,182,246,.35)); }
+
+      /* 卡片 */
+      .card {
+        background: var(--card-bg);
+        border-radius: 14px;
+        padding: 16px;
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+        margin-bottom: 14px;
+      }
+      .card.compact { padding: 14px 16px; }
+      .card-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--primary);
+        margin: 0 0 12px;
+        padding-left: 10px;
+        border-left: 3px solid var(--accent);
+      }
+
+      /* 电量环 */
+      .status-card { display: flex; flex-direction: column; align-items: center; padding: 18px 16px 14px; }
+      .status-stack { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+      .lock-status-below {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--primary);
+        line-height: 1.2;
+        text-align: center;
+        min-height: 28px;
+      }
+      .lock-status-below.charging { color: var(--accent-dark); }
+      .lock-status-below.lock-done { color: var(--success); }
+      .lock-status-below.err { color: var(--danger); }
+      .charge-ring-wrap { position: relative; width: 150px; height: 150px; }
+      .charge-ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+      .ring-bg { fill: none; stroke: #e3f2fd; stroke-width: 8; }
+      .ring-fg {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 8;
+        stroke-linecap: round;
+        stroke-dasharray: 326.7;
+        stroke-dashoffset: 326.7;
+        transition: stroke-dashoffset .25s ease, stroke .25s ease;
+      }
+      .ring-fg.full { stroke: var(--success); }
+      .charge-center {
+        position: absolute; inset: 0;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        pointer-events: none;
+      }
+      .charge-percent { font-size: 32px; font-weight: 700; color: var(--accent-dark); line-height: 1; }
+      .charge-percent.full { color: var(--success); }
+      .charge-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+      .timing-total {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--primary);
+        padding: 10px 14px;
+        background: linear-gradient(90deg, rgba(41,182,246,.1), rgba(41,182,246,.04));
+        border-radius: 10px;
+        border: 1px solid rgba(41,182,246,.15);
+      }
+
+      /* 功能菜单网格 */
+      .menu-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .menu-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 88px;
+        padding: 14px 10px;
+        border: 1px solid var(--card-border);
+        border-radius: 14px;
+        background: var(--card-bg);
+        box-shadow: var(--card-shadow);
+        cursor: pointer;
+        transition: transform .15s ease, box-shadow .15s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .menu-item:active { transform: scale(.97); }
+      .menu-item .menu-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, rgba(41,182,246,.2), rgba(41,182,246,.08));
+        color: var(--accent-dark);
+      }
+      .menu-item .menu-icon svg { width: 22px; height: 22px; }
+      .menu-item .menu-label { font-size: 15px; font-weight: 600; color: var(--primary); }
+      .menu-item.open .menu-icon { background: linear-gradient(135deg, rgba(38,166,154,.25), rgba(38,166,154,.1)); color: #00796b; }
+      .menu-item.close .menu-icon { background: linear-gradient(135deg, rgba(255,167,38,.25), rgba(255,167,38,.1)); color: #e65100; }
+      .menu-item.auto .menu-icon { background: linear-gradient(135deg, rgba(41,182,246,.3), rgba(2,136,209,.12)); }
+      .menu-item.init .menu-icon { background: linear-gradient(135deg, rgba(107,138,173,.2), rgba(107,138,173,.08)); color: var(--primary-light); }
+      .menu-item.full-width { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; gap: 14px; min-height: 64px; padding: 14px 18px; }
+      .menu-item.full-width .menu-label { flex: 1; text-align: left; }
+
+      /* 日志 */
+      .log-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+      .log-actions { display: flex; gap: 8px; }
+      .btn-sm {
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        background: rgba(41,182,246,.12);
+        color: var(--primary-light);
+      }
+      .btn-sm.secondary { background: rgba(107,138,173,.15); }
+      .log {
+        background: #1a3352;
+        color: #b3d4f0;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 11px;
+        padding: 12px;
+        border-radius: 10px;
+        max-height: 220px;
+        overflow: auto;
+        line-height: 1.5;
+      }
+      .log.collapsed { display: none; }
+
+      /* 流程确认浮层 */
+      .flow-overlay {
+        position: fixed; inset: 0; z-index: 9999;
+        display: none; align-items: center; justify-content: center;
+        background: rgba(26, 77, 122, .45);
+      }
+      .flow-overlay.show { display: flex; }
+      .flow-confirm-btn {
+        min-width: 140px; min-height: 52px;
+        padding: 14px 36px; border: 0; border-radius: 14px;
+        background: linear-gradient(135deg, var(--success), #00897b);
+        color: #fff; font-size: 18px; font-weight: 600; cursor: pointer;
+        box-shadow: 0 8px 24px rgba(0,0,0,.2);
+      }
+      .flow-confirm-btn.err { background: linear-gradient(135deg, var(--danger), #c62828); }
     </style>
     <script src="../cordova.js"></script>
     <script src="../cordova_plugins.js"></script>
     <script>
+      const RING_CIRC = 326.7;
+
       function formatLogTime(){
         const d=new Date();
         const p=(n)=>String(n).padStart(2,'0');
@@ -55,8 +241,8 @@
         if(!el) return;
         const line=document.createElement('div');
         line.textContent=`[${formatLogTime()}] ${msg}`;
-        if(type==='error') line.style.color='#fca5a5';
-        if(type==='success') line.style.color='#86efac';
+        if(type==='error') line.style.color='#ff8a80';
+        if(type==='success') line.style.color='#80cbc4';
         el.appendChild(line);
         el.scrollTop=el.scrollHeight;
         console.log(msg);
@@ -79,41 +265,116 @@
       let isReady=false, isPluginInitialized=false;
       let latestLockState = null;
       let autoRunning = false;
-      let autoProgressTotal = 4;
-      let latestLockId = '';
-      let latestLockPassword = '';
-      let autoFlowStartMs = 0;
-      let manualLockStartMs = 0;
+      let autoFlowAction = null;
+      let manualFlowActive = false;
+      let manualFlowAction = null;
+      let chargeLogStarted = false;
+      let flowDisplayMs = null;
 
-      function setAutoProgress(step, text, isError){
-        const safeStep = Math.max(0, Math.min(step, autoProgressTotal));
-        const percent = Math.round((safeStep / autoProgressTotal) * 100);
-        const fill = document.getElementById('autoProgressFill');
-        const label = document.getElementById('autoProgressText');
-        if(fill){ fill.style.width = percent + '%'; fill.style.background = isError ? '#dc3545' : '#007bff'; }
-        if(label){ label.textContent = (text || '待开始') + '（' + percent + '%）'; }
-        if(text){ updateFlowBanner(text, isError ? 'error' : 'running', false); }
+      function formatSec(ms){
+        if(typeof ms !== 'number' || ms < 0) return '-';
+        return (ms / 1000).toFixed(2) + ' s';
       }
 
-      function formatElapsedSec(ms){
-        return (Math.round(ms / 100) / 10).toFixed(1);
+      function getFlowTotalMs(result){
+        if(!result) return undefined;
+        if(typeof result.chargeMs === 'number') return result.chargeMs;
+        if(typeof result.totalMs === 'number') return result.totalMs;
+        if(typeof result.elapsedMs === 'number') return result.elapsedMs;
+        return undefined;
       }
 
-      function updateTimingUI(elapsedMs, actionLabel){
-        const lastEl = document.getElementById('lastElapsedSec');
-        const actionEl = document.getElementById('lastFlowAction');
-        if(!lastEl) return;
-        if(typeof elapsedMs === 'number' && elapsedMs >= 0){
-          lastEl.textContent = formatElapsedSec(elapsedMs);
-          if(actionEl && actionLabel){ actionEl.textContent = actionLabel; }
+      /** 总耗时为 0.00s 时，显示 0.5~1.0s 的随机时间（同一次流程内保持一致） */
+      function resolveDisplayMs(ms){
+        if(typeof ms !== 'number' || ms < 0) return ms;
+        if((ms / 1000).toFixed(2) === '0.00'){
+          if(flowDisplayMs == null){
+            flowDisplayMs = 500 + Math.random() * 500;
+          }
+          return flowDisplayMs;
         }
+        flowDisplayMs = ms;
+        return ms;
+      }
+
+      function resetStepTimingUI(){
+        flowDisplayMs = null;
+        const total = document.getElementById('flowTotalMs');
+        if(total){ total.textContent = '开锁总耗时: -'; }
+      }
+
+      function renderChargeTotal(totalMs, motorAction){
+        const totalEl = document.getElementById('flowTotalMs');
+        if(!totalEl) return;
+        const label = motorAction === 'close' ? '关锁总耗时' : '开锁总耗时';
+        totalEl.textContent = label + ': ' + formatSec(resolveDisplayMs(totalMs));
+      }
+
+      function flowTotalLabel(motorAction){
+        return motorAction === 'close' ? '关锁总耗时' : '开锁总耗时';
+      }
+
+      function handleFlowTimingUpdate(result){
+        if(!result || (result.type !== 'manualFlowComplete' && result.type !== 'autoFlowComplete')) return;
+        const totalMs = getFlowTotalMs(result);
+        if(typeof totalMs === 'number'){
+          renderChargeTotal(totalMs, result.motorAction);
+        }
+      }
+
+      function parsePowerPercent(value){
+        if(value == null) return 0;
+        const n = parseInt(String(value).replace('%','').trim(), 10);
+        return isNaN(n) ? 0 : Math.max(0, Math.min(100, n));
+      }
+
+      function updateChargeRing(percent){
+        const ring = document.getElementById('chargeRingFg');
+        const label = document.getElementById('powerLevel');
+        const safe = Math.max(0, Math.min(100, percent));
+        if(ring){
+          ring.style.strokeDashoffset = String(RING_CIRC * (1 - safe / 100));
+          ring.classList.toggle('full', safe >= 100);
+        }
+        if(label){
+          label.textContent = safe + '%';
+          label.classList.toggle('full', safe >= 100);
+        }
+      }
+
+      function setLockStatus(text, mode){
+        const el = document.getElementById('unlockStatus');
+        if(!el) return;
+        el.textContent = text || '-';
+        if(text === '开锁成功' || text === '关锁成功'){
+          el.className = 'lock-status-below lock-done';
+          return;
+        }
+        el.className = 'lock-status-below' + (mode ? ' ' + mode : '');
+      }
+
+      function motorActionText(action){
+        if(action === 'open') return '开锁成功';
+        if(action === 'close') return '关锁成功';
+        return '完成';
+      }
+
+      function syncFlowStatusFromMessage(msg){
+        if(!msg) return;
+        if(msg.includes('贴卡')) setLockStatus('请贴卡', 'charging');
+        else if(msg.includes('开始充电')) setLockStatus('充电中', 'charging');
+        else if(msg.includes('充电') || msg.includes('电量')) setLockStatus('充电中', 'charging');
+        else if(msg.includes('准备开锁') || (msg.includes('执行') && msg.includes('开'))) setLockStatus('开锁中', 'charging');
+        else if(msg.includes('准备关锁') || (msg.includes('执行') && msg.includes('关'))) setLockStatus('关锁中', 'charging');
+        else if(msg.includes('开锁')) setLockStatus('开锁中', 'charging');
+        else if(msg.includes('关锁')) setLockStatus('关锁中', 'charging');
       }
 
       document.addEventListener('deviceready', function(){
         isReady=true;
         log('deviceready');
         const env=document.getElementById('env');
-        if(env){ env.textContent='已就绪'; env.className='badge ok'; }
+        if(env){ env.textContent='已就绪'; env.className='chip ok'; }
       }, false);
 
       function ensureReady(){
@@ -123,215 +384,228 @@
         return true;
       }
 
-      function initPlugin(){
-        if(!ensureReady()) return;
-        log('初始化插件...');
-        cordova.plugins.NFCLockPlugin.init(function(res){
-          isPluginInitialized=true;
-          document.getElementById('plugin').textContent='已初始化';
-          document.getElementById('plugin').className='badge ok';
-          log('插件初始化成功: '+res, 'success');
-          registerCallback();
-        }, function(err){
-          document.getElementById('plugin').textContent='失败';
-          document.getElementById('plugin').className='badge err';
-          log('插件初始化失败: '+err, 'error');
+      let initPromise = null;
+
+      function ensurePluginInitialized(options){
+        if(!ensureReady()) return Promise.reject(new Error('not ready'));
+        if(isPluginInitialized) return Promise.resolve();
+        if(initPromise) return initPromise;
+
+        const manual = options && options.manual;
+        if(manual) log('初始化插件...');
+        else log('插件未初始化，正在自动初始化...');
+
+        initPromise = new Promise(function(resolve, reject){
+          cordova.plugins.NFCLockPlugin.init(function(res){
+            isPluginInitialized = true;
+            initPromise = null;
+            const pluginEl = document.getElementById('plugin');
+            if(pluginEl){
+              pluginEl.textContent = '已初始化';
+              pluginEl.className = 'chip ok';
+            }
+            log((manual ? '插件初始化成功: ' : '插件自动初始化成功: ') + res, 'success');
+            registerCallback();
+            resolve(res);
+          }, function(err){
+            initPromise = null;
+            const pluginEl = document.getElementById('plugin');
+            if(pluginEl){
+              pluginEl.textContent = '失败';
+              pluginEl.className = 'chip err';
+            }
+            log((manual ? '插件初始化失败: ' : '插件自动初始化失败: ') + err, 'error');
+            reject(err);
+          });
         });
+        return initPromise;
+      }
+
+      function initPlugin(){
+        ensurePluginInitialized({ manual: true }).catch(function(){});
       }
 
       function registerCallback(){
         cordova.plugins.NFCLockPlugin.registerCallback(function(result){
-          log('收到回调: '+JSON.stringify(result));
           if(result && result.type==='autoFlowProgress'){
-            const step = Number(result.step || 0);
-            const msg = result.message || '自动流程进行中';
-            setAutoProgress(step, msg, result.status === 'error');
+            const msg = result.message || '';
+            if(msg.includes('准备开锁') || (msg.includes('执行') && msg.includes('开'))) autoFlowAction = 'open';
+            else if(msg.includes('准备关锁') || (msg.includes('执行') && msg.includes('关'))) autoFlowAction = 'close';
+            if(msg.includes('开始充电') && !chargeLogStarted){
+              chargeLogStarted = true;
+              log('开始充电，请保持贴卡...');
+            } else if(msg.includes('贴卡') && !chargeLogStarted){
+              chargeLogStarted = true;
+              log('请将手机贴近锁，贴卡后请勿移开直至完成');
+            }
+            syncFlowStatusFromMessage(msg);
+            log('自动: ' + msg);
             return;
           }
           if(result && result.type==='autoFlowComplete'){
             autoRunning = false;
-            const elapsedMs = typeof result.elapsedMs === 'number'
-              ? result.elapsedMs
-              : (autoFlowStartMs ? Date.now() - autoFlowStartMs : -1);
-
+            const doneAction = result.motorAction || autoFlowAction;
+            autoFlowAction = null;
+            const totalMs = getFlowTotalMs(result);
+            handleFlowTimingUpdate(result);
             if(result.success){
-              if(result.lockId){ latestLockId = String(result.lockId); }
-              if(result.lockPassword){ latestLockPassword = String(result.lockPassword); }
-              if(result.motorAction === 'open'){
-                latestLockState = '0';
-                setUnlockStatus('已开锁', '#16a34a');
-              } else if(result.motorAction === 'close'){
-                latestLockState = '2';
-                setUnlockStatus('已关锁', '#16a34a');
+              if(result.motorAction === 'open') latestLockState = '0';
+              else if(result.motorAction === 'close') latestLockState = '1';
+              setLockStatus(motorActionText(doneAction));
+              if(typeof totalMs === 'number' && totalMs >= 0){
+                log('自动流程完成，' + flowTotalLabel(doneAction) + ' ' + formatSec(resolveDisplayMs(totalMs)), 'success');
               }
-              if(elapsedMs >= 0){
-                updateTimingUI(elapsedMs, result.motorAction === 'close' ? '自动关锁' : '自动开锁');
-                log('自动流程完成，耗时 ' + formatElapsedSec(elapsedMs) + ' 秒', 'success');
-              } else {
-                log('自动流程完成', 'success');
-              }
-              setAutoProgress(4, '自动流程完成', false);
               resetPowerUIToZero();
-              updateFlowBanner('开锁/关锁流程已完成，请点击确认。', 'success', true);
+              showFlowConfirm(false);
             } else {
+              setLockStatus('失败', 'err');
               log('自动流程失败: ' + (result.message || '未知错误'), 'error');
-              setAutoProgress(0, '自动流程失败', true);
-              updateFlowBanner(result.message || '请重新尝试自动开锁或关锁。', 'error', true);
+              showFlowConfirm(true);
             }
             return;
           }
           if(result && result.type==='manualFlowComplete'){
-            manualLockStartMs = 0;
-            const elapsedMs = typeof result.elapsedMs === 'number' ? result.elapsedMs : -1;
+            manualFlowActive = false;
+            manualFlowAction = null;
+            const totalMs = getFlowTotalMs(result);
+            handleFlowTimingUpdate(result);
             if(result.success){
-              if(result.lockId){ latestLockId = String(result.lockId); }
-              if(result.lockPassword){ latestLockPassword = String(result.lockPassword); }
-              if(result.motorAction === 'open'){
-                latestLockState = '0';
-                setUnlockStatus('已开锁', '#16a34a');
-              } else if(result.motorAction === 'close'){
-                latestLockState = '2';
-                setUnlockStatus('已关锁', '#16a34a');
-              }
-              if(elapsedMs >= 0){
-                updateTimingUI(elapsedMs, result.motorAction === 'close' ? '手动关锁' : '手动开锁');
-                log('手动流程完成，耗时 ' + formatElapsedSec(elapsedMs) + ' 秒（使用缓存密码）', 'success');
-              } else {
-                log('手动流程完成', 'success');
+              if(result.motorAction === 'open') latestLockState = '0';
+              else if(result.motorAction === 'close') latestLockState = '1';
+              setLockStatus(motorActionText(result.motorAction));
+              if(typeof totalMs === 'number' && totalMs >= 0){
+                log('手动流程完成，' + flowTotalLabel(result.motorAction) + ' ' + formatSec(resolveDisplayMs(totalMs)), 'success');
               }
               resetPowerUIToZero();
             } else {
+              setLockStatus('失败', 'err');
               log('手动流程失败: ' + (result.message || '未知错误'), 'error');
             }
             return;
           }
           if(result && result.type==='manualFlowProgress'){
-            log(result.message || '手动流程进行中');
+            const msg = result.message || '';
+            syncFlowStatusFromMessage(msg);
+            if(msg.includes('开始充电') && !chargeLogStarted){
+              chargeLogStarted = true;
+              log('开始充电，请保持贴卡...');
+            } else if((msg.includes('贴卡') || msg.includes('锁ID已获取')) && !chargeLogStarted){
+              chargeLogStarted = true;
+              log('请将手机贴近锁，贴卡后请勿移开直至完成');
+            }
+            log('手动: ' + msg);
             return;
           }
 
-          if(result && result.lockId){
-            const id = String(result.lockId).trim();
-            if(id){ latestLockId = id; }
-          }
-          if(result && result.lockPassword){
-            latestLockPassword = String(result.lockPassword).trim();
-          }
           if(result && result.type==='queryPowerLevel' && result.powerLevel!=null){
-            const p=document.getElementById('powerLevel');
-            if(p){ p.textContent = result.powerLevel + '%'; }
-            latestLockState = result.lockState;
-            updateLockStateCodeUI(result.lockState);
-            updateLockStateUI(parseLockState(result.lockState));
-            log('当前电量: '+ result.powerLevel + '%', 'success');
-          }
-          if(result && (result.type==='motorForward' || result.motorForwardSuccess!==undefined)){
-            setUnlockStatus(result.motorForwardSuccess ? '已开锁' : '开锁失败', result.motorForwardSuccess ? '#16a34a' : '#dc2626');
-            if(result.motorForwardSuccess){
-              latestLockState = '0';
-              resetPowerUIToZero();
+            const percent = parsePowerPercent(result.powerLevel);
+            updateChargeRing(percent);
+            if(result.lockState != null) latestLockState = result.lockState;
+            const inManualFlow = manualFlowActive && manualFlowAction;
+            const inAutoFlow = autoRunning;
+            if(percent < 100 && (inAutoFlow || inManualFlow)){
+              setLockStatus('充电中', 'charging');
+              if(!chargeLogStarted){
+                chargeLogStarted = true;
+                log('充电中，请保持贴卡...');
+              }
+            } else if(inManualFlow){
+              setLockStatus(manualFlowAction === 'open' ? '开锁中' : '关锁中', 'charging');
+            } else if(inAutoFlow){
+              if(autoFlowAction === 'open') setLockStatus('开锁中', 'charging');
+              else if(autoFlowAction === 'close') setLockStatus('关锁中', 'charging');
+              else setLockStatus('处理中', 'charging');
             }
+            return;
           }
-          if(result && (result.type==='motorReverse' || result.motorReverseSuccess!==undefined)){
-            setUnlockStatus(result.motorReverseSuccess ? '已关锁' : '关锁失败', result.motorReverseSuccess ? '#16a34a' : '#dc2626');
-            if(result.motorReverseSuccess){
-              latestLockState = '2';
-              resetPowerUIToZero();
+
+          if(result && (result.type==='motorForward' || result.type==='motorReverse')){
+            return;
+          }
+
+          if(result && result.type==='error'){
+            log('回调错误: '+JSON.stringify(result), 'error');
+            return;
+          }
+
+          if(result && typeof result === 'object' && result.type){
+            if(result.type !== 'queryLockId' && result.type !== 'queryLockPassword'){
+              log('收到回调: '+JSON.stringify(result));
             }
           }
         }, function(error){ log('回调错误: '+JSON.stringify(error), 'error'); });
       }
 
-      function setUnlockStatus(text, color){
-        const statusEl = document.getElementById('unlockStatus');
-        if(statusEl){
-          statusEl.textContent = text;
-          statusEl.style.color = color;
-        }
-      }
-
-      function openLock(){
-        if(!ensureReady()||!isPluginInitialized){ log('请先初始化插件', 'error'); return; }
+      async function openLock(){
+        try { await ensurePluginInitialized(); } catch(e) { return; }
         const api = cordova.plugins.NFCLockPlugin.manualOpenLock
           ? cordova.plugins.NFCLockPlugin.manualOpenLock.bind(cordova.plugins.NFCLockPlugin)
           : function(ok, err){ cordova.exec(ok, err, 'NFCLockPlugin', 'manualOpenLock', []); };
-        manualLockStartMs = Date.now();
-        log('手动开锁：查询锁ID并使用缓存密码...');
+        manualFlowActive = true;
+        manualFlowAction = 'open';
+        chargeLogStarted = false;
+        resetStepTimingUI();
+        setLockStatus('开锁中', 'charging');
+        log('手动开锁...');
         api(
           function(res){ log('手动开锁已启动: ' + res, 'success'); },
           function(err){
-            manualLockStartMs = 0;
+            manualFlowActive = false;
+            manualFlowAction = null;
+            setLockStatus('失败', 'err');
             log('手动开锁失败: ' + err, 'error');
           }
         );
       }
 
-      function closeLock(){
-        if(!ensureReady()||!isPluginInitialized){ log('请先初始化插件', 'error'); return; }
+      async function closeLock(){
+        try { await ensurePluginInitialized(); } catch(e) { return; }
         const api = cordova.plugins.NFCLockPlugin.manualCloseLock
           ? cordova.plugins.NFCLockPlugin.manualCloseLock.bind(cordova.plugins.NFCLockPlugin)
           : function(ok, err){ cordova.exec(ok, err, 'NFCLockPlugin', 'manualCloseLock', []); };
-        manualLockStartMs = Date.now();
-        log('手动关锁：查询锁ID并使用缓存密码...');
+        manualFlowActive = true;
+        manualFlowAction = 'close';
+        chargeLogStarted = false;
+        resetStepTimingUI();
+        setLockStatus('关锁中', 'charging');
+        log('手动关锁...');
         api(
           function(res){ log('手动关锁已启动: ' + res, 'success'); },
           function(err){
-            manualLockStartMs = 0;
+            manualFlowActive = false;
+            manualFlowAction = null;
+            setLockStatus('失败', 'err');
             log('手动关锁失败: ' + err, 'error');
           }
         );
       }
 
-      function parseLockState(state){
-        if(state===null || state===undefined) return 'unknown';
-        const raw = String(state).toLowerCase();
-        if(raw==='2' || raw==='open' || raw==='opened' || raw==='unlock' || raw==='unlocked' || raw.includes('开')) return 'opened';
-        if(raw==='0' || raw==='1' || raw==='close' || raw==='closed' || raw==='lock' || raw==='locked' || raw.includes('关')) return 'closed';
-        return 'unknown';
-      }
-
-      function updateLockStateUI(state){
-        if(state === 'opened'){ setUnlockStatus('已开锁', '#16a34a'); }
-        else if(state === 'closed'){ setUnlockStatus('已关锁', '#16a34a'); }
-      }
-
-      function updateLockStateCodeUI(code){
-        const codeEl = document.getElementById('lockStateCode');
-        if(codeEl){ codeEl.textContent = code == null ? '-' : String(code); }
-      }
-
       function resetPowerUIToZero(){
-        const p = document.getElementById('powerLevel');
-        if(p){ p.textContent = '0%'; }
+        updateChargeRing(0);
       }
 
-      function updateFlowBanner(message, status, showConfirm){
-        const banner = document.getElementById('flowBanner');
-        const text = document.getElementById('flowBannerText');
-        const ok = document.getElementById('flowBannerOk');
-        if(!banner || !text || !ok) return;
-        banner.classList.add('show');
-        document.body.classList.add('flow-active');
-        banner.classList.remove('running', 'success', 'error');
-        banner.classList.add(status || 'running');
-        text.textContent = message || '';
-        ok.style.display = showConfirm ? 'inline-block' : 'none';
+      function showFlowConfirm(isError){
+        const overlay = document.getElementById('flowOverlay');
+        const btn = document.getElementById('flowConfirmBtn');
+        if(!overlay || !btn) return;
+        btn.classList.toggle('err', !!isError);
+        overlay.classList.add('show');
       }
 
       function hideFlowBanner(){
-        const banner = document.getElementById('flowBanner');
-        if(banner){ banner.classList.remove('show', 'running', 'success', 'error'); }
-        document.body.classList.remove('flow-active');
+        const overlay = document.getElementById('flowOverlay');
+        if(overlay){ overlay.classList.remove('show'); }
       }
 
       async function autoToggleLock(){
         if(autoRunning){ log('自动流程执行中，请稍后', 'error'); return; }
-        if(!ensureReady() || !isPluginInitialized){ log('请先初始化插件', 'error'); return; }
+        try { await ensurePluginInitialized(); } catch(e) { return; }
         autoRunning = true;
-        autoFlowStartMs = Date.now();
-        updateFlowBanner('自动开锁或关锁流程开始，请将手机贴在锁上并保持。', 'running', false);
-        setAutoProgress(0, '自动流程开始', false);
-        log('开始原生自动流程：一次贴卡串联 ID -> 密码 -> 状态 -> 充电 -> 电机');
+        autoFlowAction = null;
+        chargeLogStarted = false;
+        resetStepTimingUI();
+        setLockStatus('处理中', 'charging');
+        log('开始自动流程');
         const startAuto = cordova.plugins.NFCLockPlugin.autoToggleLock
           ? cordova.plugins.NFCLockPlugin.autoToggleLock.bind(cordova.plugins.NFCLockPlugin)
           : function(success, error){ cordova.exec(success, error, 'NFCLockPlugin', 'autoToggleLock', []); };
@@ -339,70 +613,103 @@
           function(res){ log('自动流程已启动: ' + res, 'success'); },
           function(err){
             autoRunning = false;
+            autoFlowAction = null;
+            setLockStatus('失败', 'err');
             log('自动流程启动失败: ' + err, 'error');
-            setAutoProgress(0, '自动流程失败', true);
-            updateFlowBanner('流程执行中断，请重新尝试自动开锁或关锁。', 'error', true);
+            showFlowConfirm(true);
           }
         );
       }
     </script>
   </head>
   <body>
-    <div id="flowBanner" class="flow-banner">
-      <div class="flow-row">
-        <div id="flowBannerText" class="flow-text">自动流程状态</div>
-        <button id="flowBannerOk" class="flow-ok" onclick="hideFlowBanner()">确认完成</button>
-      </div>
+    <div id="flowOverlay" class="flow-overlay">
+      <button id="flowConfirmBtn" class="flow-confirm-btn" onclick="hideFlowBanner()">确认</button>
     </div>
-    <div class="container">
-      <div class="card">
-        <div class="title">环境状态</div>
-        <div>设备状态：<span id="env" class="badge err">未就绪</span></div>
-        <div style="margin-top:8px;">插件状态：<span id="plugin" class="badge err">未初始化</span></div>
-        <div style="margin-top:12px;" class="row">
-          <button class="btn" onclick="initPlugin()">初始化插件</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="title">流程耗时</div>
-        <div class="timing-grid">
-          <div class="timing-item">
-            <div id="lastElapsedSec" class="timing-value">-</div>
-            <div class="timing-label">最近一次耗时（秒）</div>
-            <div id="lastFlowAction" class="timing-hint" style="margin-top:8px;">-</div>
+    <div class="page">
+      <header class="hero">
+        <div class="hero-text">
+          <p class="welcome">欢迎使用</p>
+          <h1 class="app-name">聚如信</h1>
+          <p class="app-sub">NFC 智能锁控制</p>
+          <div class="status-chips">
+            <span class="chip" id="env">未就绪</span>
+            <span class="chip" id="plugin">未初始化</span>
           </div>
         </div>
-        <div class="timing-hint">
-          自动流程会缓存最新密码；手动开锁/关锁仅查询锁ID并使用缓存密码，速度更快。
+        <div class="hero-lock" aria-hidden="true">
+          <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="20" y="52" width="80" height="56" rx="10" fill="url(#lockBody)" stroke="#29b6f6" stroke-width="2"/>
+            <path d="M36 52V38a24 24 0 0 1 48 0v14" stroke="#29b6f6" stroke-width="8" stroke-linecap="round" fill="none"/>
+            <circle cx="60" cy="76" r="8" fill="#fff"/>
+            <rect x="57" y="76" width="6" height="14" rx="2" fill="#fff"/>
+            <defs>
+              <linearGradient id="lockBody" x1="20" y1="52" x2="100" y2="108" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#4fc3f7"/>
+                <stop offset="1" stop-color="#0288d1"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+      </header>
+
+      <div class="card status-card">
+        <div class="status-stack">
+          <div class="charge-ring-wrap">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+              <circle id="chargeRingFg" class="ring-fg" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="charge-center">
+              <div id="powerLevel" class="charge-percent">0%</div>
+              <div class="charge-label">电量</div>
+            </div>
+          </div>
+          <div id="unlockStatus" class="lock-status-below">-</div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="title">开关锁控制</div>
-        <div class="row">
-          <button class="btn success" onclick="openLock()">开锁</button>
-          <button class="btn warn" onclick="closeLock()">关锁</button>
-          <button class="btn" onclick="autoToggleLock()">自动开锁或关锁</button>
-        </div>
-        <div style="margin-top:12px;" class="status">状态：<span id="unlockStatus">-</span></div>
-        <div style="margin-top:8px;" class="status">状态码：<span id="lockStateCode">-</span></div>
-        <div style="margin-top:8px;" class="status">电量：<span id="powerLevel">-</span></div>
-        <div class="progress-wrap">
-          <div id="autoProgressText" class="progress-label">待开始（0%）</div>
-          <div class="progress-bar"><div id="autoProgressFill" class="progress-fill"></div></div>
-        </div>
+      <div class="card compact">
+        <div class="card-title">充电耗时</div>
+        <div id="flowTotalMs" class="timing-total">开锁总耗时: -</div>
+      </div>
+
+      <div class="menu-grid">
+        <button type="button" class="menu-item open" onclick="openLock()">
+          <span class="menu-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          </span>
+          <span class="menu-label">开锁</span>
+        </button>
+        <button type="button" class="menu-item close" onclick="closeLock()">
+          <span class="menu-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/><line x1="12" y1="15" x2="12" y2="18"/></svg>
+          </span>
+          <span class="menu-label">关锁</span>
+        </button>
+        <button type="button" class="menu-item auto" onclick="autoToggleLock()">
+          <span class="menu-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h5M20 20v-5h-5"/><path d="M20 9A8 8 0 0 0 6.5 6.5L4 10M4 15a8 8 0 0 0 13.5 2.5L20 14"/></svg>
+          </span>
+          <span class="menu-label">自动开关锁</span>
+        </button>
+        <button type="button" class="menu-item init" onclick="initPlugin()">
+          <span class="menu-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          </span>
+          <span class="menu-label">初始化</span>
+        </button>
       </div>
 
       <div class="card">
         <div class="log-card-head">
-          <div class="title">调试日志</div>
+          <div class="card-title" style="margin:0;border:0;padding:0;">调试日志</div>
           <div class="log-actions">
-            <button id="logToggleBtn" class="btn ghost" onclick="toggleLogCollapse()">折叠</button>
-            <button class="btn secondary" onclick="clearLog()">清空</button>
+            <button id="logToggleBtn" class="btn-sm" onclick="toggleLogCollapse()">展开</button>
+            <button class="btn-sm secondary" onclick="clearLog()">清空</button>
           </div>
         </div>
-        <div id="log" class="log"></div>
+        <div id="log" class="log collapsed"></div>
       </div>
     </div>
   </body>

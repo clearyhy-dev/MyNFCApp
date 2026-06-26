@@ -14,6 +14,13 @@
     </config-file>
     <!-- 指定源文件 -->
     <source-file src="src/android/NFCLockPlugin.java" target-dir="src/com/nfclock/plugin/" />
+    <source-file src="src/android/NFCLockSoundHelper.java" target-dir="src/com/nfclock/plugin/" />
+    <source-file src="src/android/FrequencyBeeper.java" target-dir="src/com/nfclock/plugin/" />
+    <source-file src="src/android/NFCLockRSSILevel.java" target-dir="src/com/nfclock/plugin/" />
+    <source-file src="src/android/NFCLockChargeFeedback.java" target-dir="src/com/nfclock/plugin/" />
+    <asset src="src/android/assets/sound/sound_nfc.mp3" target="sound/sound_nfc.mp3" />
+    <asset src="src/android/assets/sound/sound_success.mp3" target="sound/sound_success.mp3" />
+    <asset src="src/android/assets/sound/sound_error.mp3" target="sound/sound_error.mp3" />
     <!-- 关键：引入SDK的JAR包 -->
     <lib-file src="src/android/libs/nfc-lock-protocol-1.0.2.jar" />
 

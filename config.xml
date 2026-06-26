@@ -1,11 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
 <widget id="com.nfclock.nfcapp" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-    <name>My NFC App</name>
-    <description>Sample Apache Cordova App</description>
+    <name>聚如信</name>
+    <description>聚如信 NFC 智能锁控制</description>
     <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
-        Apache Cordova Team
+        聚如信
     </author>
     <content src="resources/index.html" />
+    <icon src="icon.png" />
     <allow-intent href="http://*/*" />
     <allow-intent href="https://*/*" />
     <allow-navigation href="http://*/*" />
@@ -19,7 +20,6 @@
         <preference name="android-targetSdkVersion" value="33" />
         <preference name="android-usesCleartextTraffic" value="true" />
         <preference name="android-installLocation" value="auto" />
-        <!-- 允许WebView调试 -->
         <preference name="webview-debugging-enabled" value="true" />
     </platform>
 </widget>

@@ -3,12 +3,13 @@
     <feature name="NFCLockPlugin">
         <param name="android-package" value="com.nfclock.plugin.NFCLockPlugin" />
     </feature>
-    <name>My NFC App</name>
-    <description>Sample Apache Cordova App</description>
+    <name>聚如信</name>
+    <description>聚如信 NFC 智能锁控制</description>
     <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
-        Apache Cordova Team
+        聚如信
     </author>
     <content src="resources/index.html" />
+    <icon src="icon.png" />
     <allow-intent href="http://*/*" />
     <allow-intent href="https://*/*" />
     <allow-navigation href="http://*/*" />
