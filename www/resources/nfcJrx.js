@@ -580,20 +580,49 @@
       });
     },
 
-    /** 中止当前流程并停止读卡 */
+    /**
+     * 中止当前开/关锁流程（仅 JS 编排层，不关闭原生 Reader Mode）。
+     * 其它 NFC 模块读卡前若提示「流程已取消」，请再调 clearFlowCancel()。
+     */
     abortFlow: function () {
       stopNextStep = true;
       flowRunning = false;
       rejectPending(new Error('流程已取消'));
       clearPending();
-      this.stopReadNFCJrx();
     },
 
-    /** 停止 NFC 读卡会话 */
+    /** 清除 abortFlow / 历史 stopReadNFCJrx 留下的「流程已取消」标记 */
+    clearFlowCancel: function () {
+      stopNextStep = false;
+    },
+
+    /**
+     * 停止全局 NFC Reader Mode（原生 stopReadNFCTag）。
+     * 会影响本 App 内所有 NFCLockPlugin 读卡；用完后须调 startReadNFCJrx() 恢复。
+     * 取消进行中的开/关锁请用 abortFlow()，不要单独调本方法。
+     */
     stopReadNFCJrx: function () {
-      stopNextStep = true;
       if (!plugin() || !plugin().stopReadNFC) return;
       plugin().stopReadNFC(function () {}, function () {});
+    },
+
+    /** 恢复 NFC Reader Mode（与 stopReadNFCJrx 配对） */
+    startReadNFCJrx: function () {
+      if (!plugin() || !plugin().startReadNFC) return;
+      plugin().startReadNFC(function () {}, function () {});
+    },
+
+    /**
+     * 为下一次读卡重置 NFC 会话（原生 stop→start 并等待 Tag 就绪）。
+     * runLockFlow 开始前/结束后各调用一次，原生层会合并重复请求。
+     */
+    prepareNextNfcRead: function () {
+      if (!plugin() || !plugin().resetNfcForNextRead) {
+        return Promise.resolve();
+      }
+      return new Promise(function (resolve) {
+        plugin().resetNfcForNextRead(function () { resolve(); }, function () { resolve(); });
+      });
     },
 
     /**
@@ -606,6 +635,8 @@
       options = options || {};
       var nfcCfg = cfg();
       var readFn = options.readPasswordFn || defaultReadPasswordFn;
+      var operFail = options.operFail;
+      var operSuccess = options.operSuccess;
 
       if (flowRunning) {
         return Promise.reject(new Error('流程执行中'));
@@ -620,6 +651,7 @@
         latestPowerLevel = -1;
         phase('start', { action: perType });
 
+        return self.prepareNextNfcRead().then(function () {
         return (async function () {
           try {
             var idResult = await self.runStepWithRetry(
@@ -663,15 +695,20 @@
               chargeEndMs: chargeEndMs
             };
             phase('done', result);
+            if (operSuccess && typeof operSuccess === 'function') operSuccess(result);
             return result;
           } catch (e) {
+            if (operFail && typeof operFail === 'function') operFail(e);
             phase('failed', { message: e && e.message ? e.message : String(e) });
             throw e;
           } finally {
             clearPending();
             flowRunning = false;
+            // 异步预热下一次读卡，不阻塞本次结果返回
+            self.prepareNextNfcRead();
           }
         })();
+        });
       });
     },
 

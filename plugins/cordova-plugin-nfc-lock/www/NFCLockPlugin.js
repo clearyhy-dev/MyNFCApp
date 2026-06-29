@@ -227,6 +227,15 @@ var NFCLockPlugin = {
     },
 
     /**
+     * 重置 NFC 会话，便于下一次贴卡读取（不拿开也可连续读）
+     * @param {Function} success - 成功回调函数
+     * @param {Function} error - 错误回调函数
+     */
+    resetNfcForNextRead: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'resetNfcForNextRead', []);
+    },
+
+    /**
      * 自动开锁或关锁：一次贴卡串联 ID -> 密码 -> 状态 -> 充电 -> 电机
      * @param {Function} success - 成功回调函数
      * @param {Function} error - 错误回调函数
