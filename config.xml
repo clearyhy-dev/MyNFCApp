@@ -5,7 +5,7 @@
     <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
         聚如信
     </author>
-    <content src="resources/index.html" />
+    <content src="index.html" />
     <icon src="icon.png" />
     <allow-intent href="http://*/*" />
     <allow-intent href="https://*/*" />

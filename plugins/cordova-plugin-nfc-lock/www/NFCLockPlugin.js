@@ -1,8 +1,21 @@
+cordova.define('cordova-plugin-nfc-lock.NFCLockPlugin', function (require, exports, module) {
 var exec = require('cordova/exec');
 
 /**
- * NFC 锁插件 JavaScript 接口
- * 提供与原生 NFC 锁 SDK 的交互功能
+ * Cordova 桥接：将 JS 调用转发到原生 NFCLockPlugin.java（exec action 名与 Java execute 分支一致）
+ *
+ * | 方法 | 作用 |
+ * |------|------|
+ * | init | 初始化 NFC SDK |
+ * | registerCallback | 注册全局异步回调（锁ID/电量/电机/充电阶段等） |
+ * | motorForward / motorReverse / motorStop | 电机正转/反转/停止 |
+ * | queryLockStatus | 带凭证查询电量与锁状态 |
+ * | queryLockId / queryPassword / queryLockPassword | 查锁ID / 查密码 |
+ * | queryPowerLevel | 查电量（无凭证） |
+ * | runJsChargeAndMotor | JS编排：原生充电链式轮询 + 电机 |
+ * | manualOpenLock / manualCloseLock | 原生手动开/关锁全流程 |
+ * | autoToggleLock | 原生自动交替开/关锁 |
+ * | startReadNFC / stopReadNFC | 启停读卡 |
  */
 var NFCLockPlugin = {
     
@@ -149,6 +162,11 @@ var NFCLockPlugin = {
     queryPassword: function(success, error) {
         exec(success, error, 'NFCLockPlugin', 'queryPassword', []);
     },
+
+    /** 与线上 nfcJrx.js 命名一致 */
+    queryLockPassword: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'queryPassword', []);
+    },
     
     /**
      * 设置密码（方式一）
@@ -229,8 +247,18 @@ var NFCLockPlugin = {
      */
     manualCloseLock: function(success, error) {
         exec(success, error, 'NFCLockPlugin', 'manualCloseLock', []);
+    },
+
+    /**
+     * JS 编排：原生充电链式轮询 + 电机（速度与 manualOpenLock 一致）
+     * @param {String} lockId
+     * @param {String} password
+     * @param {'open'|'close'} motorAction
+     */
+    runJsChargeAndMotor: function(lockId, password, motorAction, success, error) {
+        exec(success, error, 'NFCLockPlugin', 'runJsChargeAndMotor', [lockId, password, motorAction]);
     }
 };
 
-// 导出插件
 module.exports = NFCLockPlugin;
+});

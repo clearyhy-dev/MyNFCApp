@@ -1,4 +1,4 @@
-cordova.define("cordova-plugin-nfc-lock.NFCLockPlugin", function(require, exports, module) {
+cordova.define('cordova-plugin-nfc-lock.NFCLockPlugin', function (require, exports, module) {
 var exec = require('cordova/exec');
 
 /**
@@ -147,8 +147,13 @@ var NFCLockPlugin = {
      * @param {Function} success - 成功回调函数
      * @param {Function} error - 错误回调函数
      */
+    queryPassword: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'queryPassword', []);
+    },
+
+    /** 与线上 nfcJrx.js 命名一致 */
     queryLockPassword: function(success, error) {
-        exec(success, error, 'NFCLockPlugin', 'queryLockPassword', []);
+        exec(success, error, 'NFCLockPlugin', 'queryPassword', []);
     },
     
     /**
@@ -207,10 +212,41 @@ var NFCLockPlugin = {
      */
     stopReadNFC: function(success, error) {
         exec(success, error, 'NFCLockPlugin', 'stopReadNFC', []);
+    },
+
+    /**
+     * 自动开锁或关锁：一次贴卡串联 ID -> 密码 -> 状态 -> 充电 -> 电机
+     * @param {Function} success - 成功回调函数
+     * @param {Function} error - 错误回调函数
+     */
+    autoToggleLock: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'autoToggleLock', []);
+    },
+
+    /**
+     * 手动开锁：仅查询锁ID，使用缓存密码
+     */
+    manualOpenLock: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'manualOpenLock', []);
+    },
+
+    /**
+     * 手动关锁：仅查询锁ID，使用缓存密码
+     */
+    manualCloseLock: function(success, error) {
+        exec(success, error, 'NFCLockPlugin', 'manualCloseLock', []);
+    },
+
+    /**
+     * JS 编排：原生充电链式轮询 + 电机（速度与 manualOpenLock 一致）
+     * @param {String} lockId
+     * @param {String} password
+     * @param {'open'|'close'} motorAction
+     */
+    runJsChargeAndMotor: function(lockId, password, motorAction, success, error) {
+        exec(success, error, 'NFCLockPlugin', 'runJsChargeAndMotor', [lockId, password, motorAction]);
     }
 };
 
-// 导出插件
 module.exports = NFCLockPlugin;
-
 });
