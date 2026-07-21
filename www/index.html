@@ -94,7 +94,7 @@
       }
 
       .status-card { display: flex; flex-direction: column; align-items: center; padding: 18px 16px 14px; }
-      .status-stack { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+      .status-stack { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
       .lock-status-below {
         font-size: 22px;
         font-weight: 700;
@@ -106,27 +106,44 @@
       .lock-status-below.charging { color: var(--accent-dark); }
       .lock-status-below.lock-done { color: var(--success); }
       .lock-status-below.err { color: var(--danger); }
-      .charge-ring-wrap { position: relative; width: 150px; height: 150px; }
+      .lock-status-below.tip-red {
+        color: var(--danger);
+        font-size: 24px;
+      }
+      .charge-ring-wrap { position: relative; width: 160px; height: 160px; }
       .charge-ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-      .ring-bg { fill: none; stroke: #e3f2fd; stroke-width: 8; }
+      .ring-bg { fill: none; stroke: #e3f2fd; stroke-width: 10; }
       .ring-fg {
         fill: none;
         stroke: var(--accent);
-        stroke-width: 8;
+        stroke-width: 10;
         stroke-linecap: round;
         stroke-dasharray: 326.7;
         stroke-dashoffset: 326.7;
-        transition: stroke-dashoffset .25s ease, stroke .25s ease;
+        /* 无过渡：每次查询立即反映升/降，避免视觉“卡住” */
       }
       .ring-fg.full { stroke: var(--success); }
+      .ring-fg.down { stroke: var(--warn); }
       .charge-center {
         position: absolute; inset: 0;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         pointer-events: none;
       }
-      .charge-percent { font-size: 32px; font-weight: 700; color: var(--accent-dark); line-height: 1; }
+      .charge-percent { font-size: 30px; font-weight: 700; color: var(--accent-dark); line-height: 1; }
       .charge-percent.full { color: var(--success); }
+      .charge-percent.down { color: var(--warn); }
       .charge-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+      .charge-rate {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-align: center;
+      }
+      .charge-rate.fast { color: var(--success); }
+      .charge-rate.normal { color: var(--accent-dark); }
+      .charge-rate.slow { color: var(--warn); }
+      .charge-rate.down { color: var(--warn); }
+      .charge-rate.idle { color: var(--text-muted); }
 
       .timing-total {
         font-size: 15px;
@@ -175,8 +192,7 @@
       .menu-item .menu-label { font-size: 15px; font-weight: 600; color: var(--primary); }
       .menu-item.open .menu-icon { background: linear-gradient(135deg, rgba(38,166,154,.25), rgba(38,166,154,.1)); color: #00796b; }
       .menu-item.close .menu-icon { background: linear-gradient(135deg, rgba(255,167,38,.25), rgba(255,167,38,.1)); color: #e65100; }
-      .menu-item.auto .menu-icon { background: linear-gradient(135deg, rgba(41,182,246,.3), rgba(2,136,209,.12)); }
-      .menu-item.init .menu-icon { background: linear-gradient(135deg, rgba(107,138,173,.2), rgba(107,138,173,.08)); color: var(--primary-light); }
+      .menu-item:disabled { cursor: not-allowed; }
 
       .log-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
       .log-actions { display: flex; gap: 8px; }
@@ -203,27 +219,9 @@
       }
       .log.collapsed { display: none; }
 
-      .flow-overlay {
-        position: fixed; inset: 0; z-index: 9999;
-        display: none; align-items: center; justify-content: center;
-        background: rgba(26, 77, 122, .45);
-      }
-      .flow-overlay.show { display: flex; }
-      .flow-confirm-btn {
-        min-width: 140px; min-height: 52px;
-        padding: 14px 36px; border: 0; border-radius: 14px;
-        background: linear-gradient(135deg, var(--success), #00897b);
-        color: #fff; font-size: 18px; font-weight: 600; cursor: pointer;
-        box-shadow: 0 8px 24px rgba(0,0,0,.2);
-      }
-      .flow-confirm-btn.err { background: linear-gradient(135deg, var(--danger), #c62828); }
     </style>
   </head>
   <body>
-    <!-- 自动流程结束确认浮层：hideFlowBanner() 关闭 -->
-    <div id="flowOverlay" class="flow-overlay">
-      <button id="flowConfirmBtn" class="flow-confirm-btn" onclick="hideFlowBanner()">确认</button>
-    </div>
     <div class="page">
       <header class="hero">
         <div class="hero-text">
@@ -263,6 +261,7 @@
               <div class="charge-label">电量</div>
             </div>
           </div>
+          <div id="chargeRate" class="charge-rate idle">变化速率: --</div>
           <div id="unlockStatus" class="lock-status-below">-</div>
         </div>
       </div>
@@ -287,20 +286,6 @@
           </span>
           <span class="menu-label">关锁</span>
         </button>
-        <!-- autoToggleLock()：自动交替开/关 → NfcJrxUtil.autoToggleLock() -->
-        <button type="button" class="menu-item auto" onclick="autoToggleLock()">
-          <span class="menu-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h5M20 20v-5h-5"/><path d="M20 9A8 8 0 0 0 6.5 6.5L4 10M4 15a8 8 0 0 0 13.5 2.5L20 14"/></svg>
-          </span>
-          <span class="menu-label">自动开关锁</span>
-        </button>
-        <!-- initPlugin()：手动初始化 → NfcJrxUtil.ensureInitialized({ manual: true }) -->
-        <button type="button" class="menu-item init" onclick="initPlugin()">
-          <span class="menu-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          </span>
-          <span class="menu-label">初始化</span>
-        </button>
       </div>
 
       <div class="card">
@@ -324,100 +309,16 @@
     <script>
       /**
        * =============================================================================
-       * 聚如信演示页 — 开锁 / 关锁完整调用逻辑
+       * 聚如信演示页 — 仅保留页面按钮 / 日志；电量圆环与贴卡状态逻辑在 nfcJrx.js
        * =============================================================================
-       *
-       * 【分层】
-       *   index.html（本文件）  → 只做 UI、按钮、日志、状态展示
-       *   nfcJrx.js             → 业务编排 SDK（查 ID、密码、充电、电机）
-       *   NFCLockPlugin.js      → Cordova 桥接 exec
-       *   NFCLockPlugin.java    → 原生 NFC SDK（充电链式 WithLoop + 电机）
-       *
-       * 【启动阶段 — deviceready 一次】
-       *   1. cordova.js 触发 deviceready → isReady = true，顶部显示「已就绪」
-       *   2. NfcJrxUtil.setHooks({ log, onFlowPhase, onPower, onLockId, ... })
-       *      把页面 UI 函数注册给 SDK，流程中由 SDK 回调更新界面
-       *   3. LockPermission.applyConfig()  读取 appConfig 权限配置
-       *   4. NfcJrxUtil.ensureInitialized()
-       *      → ensureCordovaReady → plugin().init()
-       *      → registerCallbackJrx() 监听原生异步回包
-       *      → 顶部显示「已初始化」
-       *
-       * 【手动开锁 openLock() — 与关锁 closeLock() 仅 perType 不同】
-       *
-       *   用户点击「开锁」
-       *        │
-       *        ▼
-       *   openLock()                          // HTML
-       *        │
-       *        ├─ beginFlowUI('open','manual') // 校验 deviceready、防重复点击
-       *        │     · setMenuBusy(true)       // 禁用开/关/自动按钮
-       *        │     · LockPermission.clearSessionCache()
-       *        │     · setLockStatus('请贴卡开锁')
-       *        │
-       *        ▼
-       *   NfcJrxUtil.openLock()               // nfcJrx.js → runLockFlow('open')
-       *        │
-       *        ├─ ① 查询锁 ID（贴卡，可重试）
-       *        │     queryLockId() → plugin().queryLockId()
-       *        │     回调 lockId → hooks.onLockId → log('锁ID: xxx')
-       *        │     onFlowPhase('query_lock_id') → statusByPhase → UI「请贴卡读取锁ID」
-       *        │
-       *        ├─ ② 匹配锁密码（不读卡）
-       *        │     LockPermission.fetchPassword(lockId) 或 appConfig 默认密码
-       *        │     hooks.onPasswordReady → log('权限通过...')
-       *        │     onFlowPhase('fetch_password') → UI「匹配权限中」
-       *        │
-       *        ├─ ③ 原生充电 + 电机（贴卡保持）
-       *        │     plugin().runJsChargeAndMotor(lockId, pwd, 'open')
-       *        │       → Java runJsChargeAndMotor → reqQueryPowerLevelWithLoop 链式轮询
-       *        │       → 电量 < 100%：继续充电；= 100%：reqMotorForward
-       *        │     jsChargePhase start/end → log 开始/结束充电、记录 chargeMs
-       *        │     onFlowPhase('charging'/'motor') → UI「请保持贴卡」「开锁中」
-       *        │     电机成功 → pendingMotorResolve → Promise resolve
-       *        │
-       *        ▼
-       *   .then(onFlowSuccess)                 // HTML 成功收尾
-       *        · setLockStatus('开锁成功')
-       *        · renderChargeTotal(chargeMs)  // 充电结束 − 充电开始
-       *        · setMenuBusy(false)
-       *
-       *   .catch(onFlowFail)                   // HTML 失败收尾
-       *        · setLockStatus('失败')
-       *        · log 错误信息
-       *
-       * 【手动关锁 closeLock()】
-       *   与开锁相同，仅：
-       *     beginFlowUI('close','manual')
-       *     NfcJrxUtil.closeLock() → runLockFlow('close')
-       *     runJsChargeAndMotor(..., 'close') → reqMotorReverse
-       *     onFlowSuccess →「关锁成功」
-       *
-       * 【自动开关锁 autoToggleLock()】
-       *   localStorage 计数偶数→开、奇数→关
-       *   beginFlowUI(perType,'auto') → NfcJrxUtil.autoToggleLock()
-       *   成功后 showFlowConfirm() 浮层确认
-       *
-       * 【总耗时 chargeMs】
-       *   仅统计原生 NFC 充电：充电结束时间 − 充电开始时间（不含查 ID、密码、电机）
-       *   电量已满时 chargeMs ≈ 0
+       * 电量：NfcJrxUtil.bindChargeUi + 原生每次 queryPowerLevel → applyPowerSample（升/降实时）
+       * 结束：成功/失败均 finishChargeUiFull() 显示 100%，不再归零
        */
 
-      /** 电量环周长（与 CSS stroke-dasharray 一致） */
-      const RING_CIRC = 326.7;
-
-      /** Cordova deviceready 是否已触发 */
       let isReady = false;
-      /** 插件是否初始化成功（由 setHooks.setPluginInitialized 更新） */
       let isPluginInitialized = false;
-      /** 最近一次锁状态 0=开 1=关 */
-      let latestLockState = null;
-      /** 当前流程模式 manual | auto */
-      let flowMode = null;
-      /** 当前流程动作 open | close */
       let flowAction = null;
 
-      /** 格式化日志时间 HH:mm:ss.SSS */
       function formatLogTime(){
         const d=new Date();
         const p=(n)=>String(n).padStart(2,'0');
@@ -425,7 +326,6 @@
         return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${ms}`;
       }
 
-      /** 追加一行调试日志到 #log，并同步 console */
       function log(msg, type='info'){
         const el=document.getElementById('log');
         if(!el) return;
@@ -438,14 +338,12 @@
         console.log(msg);
       }
 
-      /** 清空 #log 内容 */
       function clearLog(){
         const el=document.getElementById('log');
         if(el){ el.innerHTML=''; }
         log('日志已清空');
       }
 
-      /** 折叠或展开调试日志区域 */
       function toggleLogCollapse(){
         const el=document.getElementById('log');
         const btn=document.getElementById('logToggleBtn');
@@ -454,163 +352,88 @@
         btn.textContent=collapsed ? '展开' : '折叠';
       }
 
-      /** 毫秒转秒显示字符串 */
       function formatSec(ms){
         if(typeof ms !== 'number' || ms < 0) return '-';
         return (ms / 1000).toFixed(2) + ' s';
       }
 
-      /** 重置「总耗时」卡片为占位符 */
       function resetStepTimingUI(){
         const total = document.getElementById('flowTotalMs');
         if(total){ total.textContent = '总耗时: -'; }
       }
 
-      /** 更新「总耗时」卡片（充电结束 − 充电开始） */
       function renderChargeTotal(totalMs){
         const totalEl = document.getElementById('flowTotalMs');
         if(!totalEl) return;
         totalEl.textContent = '总耗时: ' + formatSec(totalMs);
       }
 
-      /** 是否已有开/关锁流程在执行（委托 NfcJrxUtil.isFlowRunning） */
-      function isFlowBusy(){
-        return NfcJrxUtil.isFlowRunning();
-      }
-
-      /** 流程进行中禁用开锁/关锁/自动按钮，防止重复点击 */
       function setMenuBusy(busy){
-        document.querySelectorAll('.menu-item.open,.menu-item.close,.menu-item.auto').forEach(function(btn){
+        document.querySelectorAll('.menu-item.open,.menu-item.close').forEach(function(btn){
           btn.disabled = !!busy;
           btn.style.opacity = busy ? '0.55' : '';
           btn.style.pointerEvents = busy ? 'none' : '';
         });
       }
 
-      /**
-       * NfcJrxUtil.setHooks.onFlowPhase 回调：按阶段更新中部状态文案
-       * @param {string} phaseName query_lock_id | fetch_password | charging | motor
-       */
-      function statusByPhase(phaseName, detail){
-        if(phaseName === 'query_lock_id') return setLockStatus('请贴卡读取锁ID', 'charging');
-        if(phaseName === 'fetch_password') return setLockStatus('匹配权限中', 'charging');
-        if(phaseName === 'charging') return setLockStatus('请保持贴卡', 'charging');
-        if(phaseName === 'motor'){
-          const act = detail && detail.action;
-          setLockStatus(act === 'close' ? '关锁中' : '开锁中', 'charging');
-        }
-      }
-
-      /** 更新电量环与百分比文字（NfcJrxUtil.setHooks.onPower） */
-      function updateChargeRing(percent){
-        const ring = document.getElementById('chargeRingFg');
-        const label = document.getElementById('powerLevel');
-        const safe = Math.max(0, Math.min(100, percent));
-        if(ring){
-          ring.style.strokeDashoffset = String(RING_CIRC * (1 - safe / 100));
-          ring.classList.toggle('full', safe >= 100);
-        }
-        if(label){
-          label.textContent = safe + '%';
-          label.classList.toggle('full', safe >= 100);
-        }
-      }
-
-      /**
-       * 更新锁状态主文案 #unlockStatus
-       * @param {string} text 显示文字
-       * @param {string} [mode] charging | err 等 CSS 修饰类
-       */
-      function setLockStatus(text, mode){
-        const el = document.getElementById('unlockStatus');
-        if(!el) return;
-        el.textContent = text || '-';
-        if(text === '开锁成功' || text === '关锁成功'){
-          el.className = 'lock-status-below lock-done';
-          return;
-        }
-        el.className = 'lock-status-below' + (mode ? ' ' + mode : '');
-      }
-
-      /** 电机动作转成功提示文案 */
-      function motorActionText(action){
-        if(action === 'open') return '开锁成功';
-        if(action === 'close') return '关锁成功';
-        return '完成';
-      }
-
-      /**
-       * 开/关锁流程成功收尾（NfcJrxUtil.openLock/closeLock/autoToggleLock 的 then）
-       * @param {'manual'|'auto'} mode
-       * @param {Object} result SDK 返回，含 motorAction、chargeMs
-       */
-      function onFlowSuccess(mode, result){
+      function onFlowSuccess(result){
         const action = (result && result.motorAction) || flowAction;
         const chargeMs = result && typeof result.chargeMs === 'number' ? result.chargeMs : 0;
-        flowMode = null;
         flowAction = null;
         setMenuBusy(false);
-        if(action === 'open') latestLockState = '0';
-        else if(action === 'close') latestLockState = '1';
-        setLockStatus(motorActionText(action));
+        NfcJrxUtil.setLockStatus(NfcJrxUtil.motorActionText(action));
+        // 成功结束保持 100%，不归零
+        NfcJrxUtil.finishChargeUiFull();
         renderChargeTotal(chargeMs);
         log((action === 'close' ? '关锁' : '开锁') + '流程完成，充电总耗时 ' + formatSec(chargeMs), 'success');
-        resetPowerUIToZero();
-        if(mode === 'auto') showFlowConfirm(false);
       }
 
-      /**
-       * 开/关锁流程失败收尾（SDK catch）
-       * @param {'manual'|'auto'} mode
-       */
-      function onFlowFail(mode, err){
-        flowMode = null;
+      function onFlowFail(err){
         flowAction = null;
         setMenuBusy(false);
-        setLockStatus('失败', 'err');
+        NfcJrxUtil.setLockStatus('失败', 'err');
+        // 失败结束也显示 100%
+        NfcJrxUtil.finishChargeUiFull();
         log('流程失败: ' + (err && err.message ? err.message : err), 'error');
-        if(mode === 'auto') showFlowConfirm(true);
       }
 
-      /**
-       * 点击开/关锁前：校验就绪、重置 UI、清权限缓存
-       * @param {'open'|'close'} perType
-       * @param {'manual'|'auto'} mode
-       * @returns {boolean} 是否可继续调用 SDK
-       */
-      function beginFlowUI(perType, mode){
+      function beginFlowUI(perType){
         if(!isReady){
           log('设备未就绪，请等待 deviceready', 'error');
           return false;
         }
-        if(isFlowBusy()){ log('流程执行中，请稍后', 'error'); return false; }
-        flowMode = mode;
+        if(NfcJrxUtil.isFlowRunning()){ log('流程执行中，请稍后', 'error'); return false; }
         flowAction = perType;
         resetStepTimingUI();
+        NfcJrxUtil.resetChargeUiForNewFlow();
         setMenuBusy(true);
         if(window.LockPermission) LockPermission.clearSessionCache();
-        setLockStatus(perType === 'open' ? '请贴卡开锁' : '请贴卡关锁', 'charging');
-        log((mode === 'auto' ? '自动' : '手动') + (perType === 'open' ? '开锁' : '关锁') + '：请先贴卡...');
+        NfcJrxUtil.setLockStatus('请贴卡', 'tip-red');
+        log('手动' + (perType === 'open' ? '开锁' : '关锁') + '：请先贴卡...');
         return true;
       }
 
-      /** Cordova 就绪：注册 SDK 钩子并自动初始化插件 */
       document.addEventListener('deviceready', function(){
         isReady=true;
         log('deviceready');
         const env=document.getElementById('env');
         if(env){ env.textContent='已就绪'; env.className='chip ok'; }
 
-        // 将页面 UI 函数注入 NfcJrxUtil，SDK 流程中回调更新界面
+        // 电量圆环 / 请贴卡状态 → nfcJrx.js
+        NfcJrxUtil.bindChargeUi({
+          ring: 'chargeRingFg',
+          percent: 'powerLevel',
+          rate: 'chargeRate',
+          status: 'unlockStatus'
+        });
+
         NfcJrxUtil.setHooks({
           log: log,
-          onFlowPhase: statusByPhase,
-          onPower: function(percent, lockState){
-            updateChargeRing(percent);
-            if(lockState != null) latestLockState = lockState;
-          },
           onLockId: function(lockId){ log('锁ID: ' + lockId, 'success'); },
           onPasswordReady: function(){ log('权限通过，锁密码已就绪', 'success'); },
+          onPower: function(percent, lockState, rate){
+            // 圆环已由 nfcJrx.applyPowerSample 实时刷新；此处不刷屏日志以免拖慢 UI
+          },
           setPluginInitialized: function(ok){
             isPluginInitialized = !!ok;
             const pluginEl = document.getElementById('plugin');
@@ -627,7 +450,6 @@
         });
       }, false);
 
-      /** 6 秒内未 deviceready 则提示 cordova / 插件加载问题 */
       setTimeout(function(){
         if(isReady) return;
         var hint = 'deviceready 超时：';
@@ -643,51 +465,14 @@
         if(env){ env.textContent='未就绪'; env.className='chip err'; }
       }, 6000);
 
-      /** 菜单「初始化」：手动触发 NfcJrxUtil.ensureInitialized */
-      function initPlugin(){
-        if(!isReady){ log('设备未就绪，请等待 deviceready', 'error'); return; }
-        NfcJrxUtil.ensureInitialized({ manual: true }).catch(function(err){
-          log('初始化失败: ' + err, 'error');
-        });
-      }
-
-      /** 菜单「开锁」：beginFlowUI → NfcJrxUtil.openLock */
       function openLock(){
-        if(!beginFlowUI('open', 'manual')) return;
-        NfcJrxUtil.openLock().then(function(r){ onFlowSuccess('manual', r); }).catch(function(e){ onFlowFail('manual', e); });
+        if(!beginFlowUI('open')) return;
+        NfcJrxUtil.openLock().then(onFlowSuccess).catch(onFlowFail);
       }
 
-      /** 菜单「关锁」：beginFlowUI → NfcJrxUtil.closeLock */
       function closeLock(){
-        if(!beginFlowUI('close', 'manual')) return;
-        NfcJrxUtil.closeLock().then(function(r){ onFlowSuccess('manual', r); }).catch(function(e){ onFlowFail('manual', e); });
-      }
-
-      /** 流程结束后电量环归零 */
-      function resetPowerUIToZero(){
-        updateChargeRing(0);
-      }
-
-      /** 自动流程结束显示确认浮层（成功绿/失败红） */
-      function showFlowConfirm(isError){
-        const overlay = document.getElementById('flowOverlay');
-        const btn = document.getElementById('flowConfirmBtn');
-        if(!overlay || !btn) return;
-        btn.classList.toggle('err', !!isError);
-        overlay.classList.add('show');
-      }
-
-      /** 关闭自动流程确认浮层（#flowConfirmBtn onclick） */
-      function hideFlowBanner(){
-        const overlay = document.getElementById('flowOverlay');
-        if(overlay){ overlay.classList.remove('show'); }
-      }
-
-      /** 菜单「自动开关锁」：按 localStorage 计数交替开/关 → NfcJrxUtil.autoToggleLock */
-      function autoToggleLock(){
-        const perType = parseInt(localStorage.getItem('nfc_auto_toggle_count') || '0', 10) % 2 === 0 ? 'open' : 'close';
-        if(!beginFlowUI(perType, 'auto')) return;
-        NfcJrxUtil.autoToggleLock().then(function(r){ onFlowSuccess('auto', r); }).catch(function(e){ onFlowFail('auto', e); });
+        if(!beginFlowUI('close')) return;
+        NfcJrxUtil.closeLock().then(onFlowSuccess).catch(onFlowFail);
       }
     </script>
   </body>

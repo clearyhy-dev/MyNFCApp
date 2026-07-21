@@ -79,9 +79,11 @@
     return 0;
   }
 
-  /** 通知 UI 当前流程阶段 */
+  /** 通知 UI 当前流程阶段（并同步更新贴卡/电量状态文案） */
   function phase(name, detail) {
-    if (hooks.onFlowPhase) hooks.onFlowPhase(name, detail || {});
+    var d = detail || {};
+    statusByPhase(name, d);
+    if (hooks.onFlowPhase) hooks.onFlowPhase(name, d);
   }
 
   /** 统一 respCmdType 为字符串 */
@@ -115,6 +117,234 @@
     if (value == null) return 0;
     var n = parseInt(String(value).replace('%', '').trim(), 10);
     return isNaN(n) ? 0 : Math.max(0, Math.min(100, n));
+  }
+
+  // ========== 电量圆环 / 贴卡状态 UI（供演示页绑定，逻辑集中在本文件） ==========
+
+  /** 圆环周长，需与页面 CSS stroke-dasharray 一致 */
+  var CHARGE_RING_CIRC = 326.7;
+
+  /**
+   * 电量圆环 UI 状态
+   * - 每次原生 queryPowerLevel 都立即刷新圆环（升高/降低均同步）
+   * - 用瞬时 Δ%/Δt 估算贴卡强弱，便于确认是否在 NFC 最强区域
+   */
+  var chargeUi = {
+    bound: false,
+    ringEl: null,
+    percentEl: null,
+    rateEl: null,
+    statusEl: null,
+    lastSample: null,
+    /** 平滑速率 %/s：正=上升，负=下降 */
+    smoothedRate: 0,
+    /** 最近若干次瞬时速率，用于更灵敏地反映贴卡强弱 */
+    recentRates: []
+  };
+
+  /**
+   * 绑定电量圆环与状态文案 DOM（页面启动时调用一次）
+   * @param {Object} els
+   * @param {string|HTMLElement} [els.ring] 圆环前景 #chargeRingFg
+   * @param {string|HTMLElement} [els.percent] 百分比文字 #powerLevel
+   * @param {string|HTMLElement} [els.rate] 变化速率 #chargeRate
+   * @param {string|HTMLElement} [els.status] 流程状态 #unlockStatus
+   */
+  function bindChargeUi(els) {
+    els = els || {};
+    function resolve(ref) {
+      if (!ref) return null;
+      if (typeof ref === 'string') return document.getElementById(ref);
+      return ref;
+    }
+    chargeUi.ringEl = resolve(els.ring || 'chargeRingFg');
+    chargeUi.percentEl = resolve(els.percent || 'powerLevel');
+    chargeUi.rateEl = resolve(els.rate || 'chargeRate');
+    chargeUi.statusEl = resolve(els.status || 'unlockStatus');
+    chargeUi.bound = !!(chargeUi.ringEl || chargeUi.percentEl || chargeUi.rateEl);
+    chargeUi.lastSample = null;
+    chargeUi.smoothedRate = 0;
+    chargeUi.recentRates = [];
+    renderChargeRingPercent(0, 0);
+  }
+
+  /**
+   * 根据瞬时速率生成提示文案（正上升 / 负下降，用于判断贴卡区域强弱）
+   * @param {number} ratePerSec %/s
+   * @returns {{cls:string, label:string}}
+   */
+  function formatChargeRateTone(ratePerSec) {
+    if (!ratePerSec || Math.abs(ratePerSec) < 0.08) {
+      return { cls: 'idle', label: '变化速率: --（请调整贴卡位置）' };
+    }
+    var abs = Math.abs(ratePerSec);
+    var rising = ratePerSec > 0;
+    var dir = rising ? '上升' : '下降';
+    var speed = '慢';
+    var cls = rising ? 'slow' : 'down';
+    if (abs >= 8) {
+      speed = '快';
+      cls = rising ? 'fast' : 'down';
+    } else if (abs >= 3) {
+      speed = '正常';
+      cls = rising ? 'normal' : 'down';
+    }
+    var sign = rising ? '+' : '';
+    return {
+      cls: cls,
+      label: '变化速率: ' + sign + ratePerSec.toFixed(1) + '%/s · ' + dir + speed
+        + (rising && abs >= 8 ? '（贴卡较强）' : '')
+    };
+  }
+
+  /**
+   * 仅渲染圆环百分比与速率文案（不改采样状态）
+   * @param {number} percent 0~100
+   * @param {number} ratePerSec 当前速率
+   */
+  function renderChargeRingPercent(percent, ratePerSec) {
+    var safe = Math.max(0, Math.min(100, Number(percent) || 0));
+    var rate = typeof ratePerSec === 'number' ? ratePerSec : chargeUi.smoothedRate;
+    var isDown = rate < -0.08;
+    var ring = chargeUi.ringEl;
+    var label = chargeUi.percentEl;
+    var rateEl = chargeUi.rateEl;
+
+    if (ring) {
+      ring.style.strokeDashoffset = String(CHARGE_RING_CIRC * (1 - safe / 100));
+      ring.classList.toggle('full', safe >= 100);
+      ring.classList.toggle('down', isDown && safe < 100);
+    }
+    if (label) {
+      label.textContent = Math.round(safe) + '%';
+      label.classList.toggle('full', safe >= 100);
+      label.classList.toggle('down', isDown && safe < 100);
+    }
+    if (rateEl) {
+      var tone = safe >= 100
+        ? { cls: 'fast', label: '变化速率: 已满 100%' }
+        : formatChargeRateTone(rate);
+      rateEl.textContent = tone.label;
+      rateEl.className = 'charge-rate ' + tone.cls;
+    }
+  }
+
+  /**
+   * 每次电量查询回调：立即刷新圆环（升/降都更新），并估算变化快慢
+   * @param {number|string} percent 原生电量
+   * @returns {number} 规范化后的 0~100
+   */
+  function applyPowerSample(percent) {
+    var safe = parsePowerPercent(percent);
+    var now = Date.now();
+    var instant = 0;
+
+    if (chargeUi.lastSample && now > chargeUi.lastSample.t) {
+      var dtSec = (now - chargeUi.lastSample.t) / 1000;
+      var dPercent = safe - chargeUi.lastSample.p;
+      // 极短间隔也计入，提升灵敏度；同值则衰减速率
+      if (dtSec > 0.02) {
+        if (dPercent !== 0) {
+          instant = dPercent / dtSec;
+          chargeUi.recentRates.push(instant);
+          if (chargeUi.recentRates.length > 5) chargeUi.recentRates.shift();
+          var sum = 0;
+          for (var i = 0; i < chargeUi.recentRates.length; i++) sum += chargeUi.recentRates[i];
+          var avg = sum / chargeUi.recentRates.length;
+          // 瞬时权重更高，贴卡强弱变化更快反映到文案
+          chargeUi.smoothedRate = chargeUi.smoothedRate !== 0
+            ? (chargeUi.smoothedRate * 0.35 + avg * 0.65)
+            : avg;
+        } else if (dtSec >= 0.25) {
+          chargeUi.smoothedRate *= 0.6;
+          if (Math.abs(chargeUi.smoothedRate) < 0.08) chargeUi.smoothedRate = 0;
+        }
+      }
+    } else {
+      chargeUi.smoothedRate = 0;
+      chargeUi.recentRates = [];
+    }
+
+    chargeUi.lastSample = { p: safe, t: now };
+    latestPowerLevel = safe;
+    renderChargeRingPercent(safe, chargeUi.smoothedRate);
+    return safe;
+  }
+
+  /**
+   * 新开/关锁流程开始：圆环归零，清空速率采样
+   */
+  function resetChargeUiForNewFlow() {
+    chargeUi.lastSample = null;
+    chargeUi.smoothedRate = 0;
+    chargeUi.recentRates = [];
+    latestPowerLevel = 0;
+    renderChargeRingPercent(0, 0);
+  }
+
+  /**
+   * 流程结束（成功或失败）：固定显示电量 100%
+   * 开锁成功/失败都应保持满电展示，不再重置为 0
+   */
+  function finishChargeUiFull() {
+    chargeUi.lastSample = { p: 100, t: Date.now() };
+    chargeUi.smoothedRate = 0;
+    chargeUi.recentRates = [];
+    latestPowerLevel = 100;
+    renderChargeRingPercent(100, 0);
+  }
+
+  /**
+   * 更新锁状态主文案（#unlockStatus）
+   * @param {string} text 显示文字
+   * @param {string} [mode] tip-red | charging | err | lock-done
+   */
+  function setLockStatus(text, mode) {
+    var el = chargeUi.statusEl || document.getElementById('unlockStatus');
+    if (!el) return;
+    el.textContent = text || '-';
+    if (text === '开锁成功' || text === '关锁成功') {
+      el.className = 'lock-status-below lock-done';
+      return;
+    }
+    el.className = 'lock-status-below' + (mode ? ' ' + mode : '');
+  }
+
+  /**
+   * 按流程阶段更新贴卡/充电状态文案
+   * @param {string} phaseName query_lock_id | fetch_password | charging | motor | done | failed
+   * @param {Object} [detail]
+   */
+  function statusByPhase(phaseName, detail) {
+    if (phaseName === 'query_lock_id') return setLockStatus('请贴卡', 'tip-red');
+    if (phaseName === 'fetch_password') return setLockStatus('匹配权限中', 'charging');
+    if (phaseName === 'charging') return setLockStatus('请保持贴卡', 'charging');
+    if (phaseName === 'motor') {
+      var act = detail && detail.action;
+      setLockStatus(act === 'close' ? '关锁中' : '开锁中', 'charging');
+      return;
+    }
+    if (phaseName === 'done') {
+      var doneAct = detail && detail.motorAction;
+      setLockStatus(doneAct === 'close' ? '关锁成功' : '开锁成功', 'lock-done');
+      finishChargeUiFull();
+      return;
+    }
+    if (phaseName === 'failed') {
+      setLockStatus('失败', 'err');
+      finishChargeUiFull();
+    }
+  }
+
+  /**
+   * 电机动作转成功提示文案
+   * @param {'open'|'close'|string} action
+   * @returns {string}
+   */
+  function motorActionText(action) {
+    if (action === 'open') return '开锁成功';
+    if (action === 'close') return '关锁成功';
+    return '完成';
   }
 
   /** 清空所有 pending 回调 */
@@ -174,12 +404,80 @@
 
   var NfcJrxUtil = {
 
-    /** 注入日志、电量、流程阶段等钩子（UI 层可选） */
+    /**
+     * 注入日志、电量、流程阶段等钩子（UI 层可选）
+     * 注意：电量圆环与「请贴卡」状态已内置，一般只需传 log / setPluginInitialized
+     */
     setHooks: function (h) {
       if (!h) return;
       Object.keys(h).forEach(function (k) {
         hooks[k] = h[k];
       });
+    },
+
+    /**
+     * 绑定电量圆环与状态 DOM（演示页启动时调用）
+     * @param {Object} [els] ring/percent/rate/status 元素或 id
+     */
+    bindChargeUi: function (els) {
+      bindChargeUi(els);
+    },
+
+    /**
+     * 手动刷新电量圆环（一般由原生回调自动调用，无需业务层再调）
+     * @param {number|string} percent
+     */
+    updateChargeRing: function (percent) {
+      return applyPowerSample(percent);
+    },
+
+    /**
+     * 新流程开始：电量圆环归零
+     */
+    resetChargeUiForNewFlow: function () {
+      resetChargeUiForNewFlow();
+    },
+
+    /**
+     * 流程结束（成功/失败）：电量固定显示 100%
+     */
+    finishChargeUiFull: function () {
+      finishChargeUiFull();
+    },
+
+    /**
+     * 更新锁状态文案（请贴卡 / 开锁中 / 成功 等）
+     * @param {string} text
+     * @param {string} [mode] tip-red | charging | err
+     */
+    setLockStatus: function (text, mode) {
+      setLockStatus(text, mode);
+    },
+
+    /**
+     * 按流程阶段更新状态文案
+     * @param {string} phaseName
+     * @param {Object} [detail]
+     */
+    statusByPhase: function (phaseName, detail) {
+      statusByPhase(phaseName, detail);
+    },
+
+    /**
+     * 电机动作 → 成功文案
+     * @param {'open'|'close'|string} action
+     * @returns {string}
+     */
+    motorActionText: function (action) {
+      return motorActionText(action);
+    },
+
+    /**
+     * 当前平滑后的电量变化速率 %/s（正上升 / 负下降）
+     * @returns {number}
+     */
+    getChargeChangeRate: function () {
+      return chargeUi.smoothedRate;
     },
 
     /** 插件是否已完成 init */
@@ -367,8 +665,9 @@
 
           if (result && result.type === 'queryPowerLevel' && result.powerLevel != null) {
             latestLockState = result.lockState;
-            latestPowerLevel = parsePowerPercent(result.powerLevel);
-            if (hooks.onPower) hooks.onPower(latestPowerLevel, latestLockState);
+            // 每次查询立即刷新圆环（升/降都更新），供确认 NFC 贴卡强弱
+            latestPowerLevel = applyPowerSample(result.powerLevel);
+            if (hooks.onPower) hooks.onPower(latestPowerLevel, latestLockState, chargeUi.smoothedRate);
             if (pendingQueryPowerResolve) {
               pendingQueryPowerResolve(result);
               pendingQueryPowerResolve = null;
@@ -580,20 +879,49 @@
       });
     },
 
-    /** 中止当前流程并停止读卡 */
+    /**
+     * 中止当前开/关锁流程（仅 JS 编排层，不关闭原生 Reader Mode）。
+     * 其它 NFC 模块读卡前若提示「流程已取消」，请再调 clearFlowCancel()。
+     */
     abortFlow: function () {
       stopNextStep = true;
       flowRunning = false;
       rejectPending(new Error('流程已取消'));
       clearPending();
-      this.stopReadNFCJrx();
     },
 
-    /** 停止 NFC 读卡会话 */
+    /** 清除 abortFlow / 历史 stopReadNFCJrx 留下的「流程已取消」标记 */
+    clearFlowCancel: function () {
+      stopNextStep = false;
+    },
+
+    /**
+     * 停止全局 NFC Reader Mode（原生 stopReadNFCTag）。
+     * 会影响本 App 内所有 NFCLockPlugin 读卡；用完后须调 startReadNFCJrx() 恢复。
+     * 取消进行中的开/关锁请用 abortFlow()，不要单独调本方法。
+     */
     stopReadNFCJrx: function () {
-      stopNextStep = true;
       if (!plugin() || !plugin().stopReadNFC) return;
       plugin().stopReadNFC(function () {}, function () {});
+    },
+
+    /** 恢复 NFC Reader Mode（与 stopReadNFCJrx 配对） */
+    startReadNFCJrx: function () {
+      if (!plugin() || !plugin().startReadNFC) return;
+      plugin().startReadNFC(function () {}, function () {});
+    },
+
+    /**
+     * 为下一次读卡重置 NFC 会话（原生 stop→start 并等待 Tag 就绪）。
+     * runLockFlow 开始前/结束后各调用一次，原生层会合并重复请求。
+     */
+    prepareNextNfcRead: function () {
+      if (!plugin() || !plugin().resetNfcForNextRead) {
+        return Promise.resolve();
+      }
+      return new Promise(function (resolve) {
+        plugin().resetNfcForNextRead(function () { resolve(); }, function () { resolve(); });
+      });
     },
 
     /**
@@ -606,6 +934,8 @@
       options = options || {};
       var nfcCfg = cfg();
       var readFn = options.readPasswordFn || defaultReadPasswordFn;
+      var operFail = options.operFail;
+      var operSuccess = options.operSuccess;
 
       if (flowRunning) {
         return Promise.reject(new Error('流程执行中'));
@@ -620,6 +950,7 @@
         latestPowerLevel = -1;
         phase('start', { action: perType });
 
+        return self.prepareNextNfcRead().then(function () {
         return (async function () {
           try {
             var idResult = await self.runStepWithRetry(
@@ -663,15 +994,20 @@
               chargeEndMs: chargeEndMs
             };
             phase('done', result);
+            if (operSuccess && typeof operSuccess === 'function') operSuccess(result);
             return result;
           } catch (e) {
+            if (operFail && typeof operFail === 'function') operFail(e);
             phase('failed', { message: e && e.message ? e.message : String(e) });
             throw e;
           } finally {
             clearPending();
             flowRunning = false;
+            // 异步预热下一次读卡，不阻塞本次结果返回
+            self.prepareNextNfcRead();
           }
         })();
+        });
       });
     },
 

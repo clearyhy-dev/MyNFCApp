@@ -46,7 +46,9 @@ public class NFCLockPlugin extends CordovaPlugin {
     private static final int MOTOR_RESPONSE_TIMEOUT_MS = 8000;
     private static final int READ_SESSION_DELAY_MS = 0;
     private static final int AUTO_FLOW_STEP_DELAY_MS = 0;
-    private static final int CHARGE_SESSION_WARMUP_MS = 80;
+    private static final int CHARGE_SESSION_WARMUP_MS = 100;
+    /** startReadNFCTag 后等待 Tag 重新发现再下发命令（贴卡不拿开场景） */
+    private static final int READER_POST_START_ARM_MS = 150;
     private static final int MAX_FLOW_CHARGE_ERROR_RETRIES = 3;
     private static final int MAX_FLOW_LOCK_ID_RETRIES = 1;
     private static final int FLOW_ARM_NONE = 0;
@@ -54,6 +56,8 @@ public class NFCLockPlugin extends CordovaPlugin {
     private static final int FLOW_ARM_QUERY_POWER = 2;
     private static final int FLOW_ARM_QUERY_PWD = 3;
     private final android.os.Handler autoFlowHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable pendingReaderRestartRunnable = null;
+    private Runnable pendingReaderRestartOnReady = null;
     private Runnable autoFlowTimeoutRunnable = null;
     private Runnable autoFlowChargeTimeoutRunnable = null;
     private Runnable manualFlowTimeoutRunnable = null;
@@ -260,6 +264,15 @@ public class NFCLockPlugin extends CordovaPlugin {
             String motorAction = args.getString(2);
             this.runJsChargeAndMotor(lockId, password, motorAction, callbackContext);
             return true;
+        } else if ("startReadNFC".equals(action)) {
+            this.startReadNFC(callbackContext);
+            return true;
+        } else if ("stopReadNFC".equals(action)) {
+            this.stopReadNFC(callbackContext);
+            return true;
+        } else if ("resetNfcForNextRead".equals(action)) {
+            this.resetNfcForNextRead(callbackContext);
+            return true;
         }
         return false;
     }
@@ -305,6 +318,44 @@ public class NFCLockPlugin extends CordovaPlugin {
 
         NFCLockManager.getInstance().startReadNFCTag(cordova.getActivity());
         android.util.Log.d("NFCLockPlugin", "NFC读取已启动");
+    }
+    /** 启动 NFC Reader Mode（JS stopReadNFC 后恢复读卡） */
+    private void startReadNFC(final CallbackContext callbackContext) {
+        if (!isInitialized) {
+            callbackContext.error("插件未初始化");
+            return;
+        }
+        cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    NFCLockManager.getInstance().startReadNFCTag(cordova.getActivity());
+                    android.util.Log.d("NFCLockPlugin", "NFC读取已启动(startReadNFC)");
+                    callbackContext.success("NFC读取已启动");
+                } catch (Exception e) {
+                    android.util.Log.e("NFCLockPlugin", "startReadNFC失败: " + e.getMessage());
+                    callbackContext.error("startReadNFC failed: " + e.getMessage());
+                }
+            }
+        });
+    }
+    /** 停止 NFC Reader Mode（全局，影响所有 NFCLockPlugin 读卡） */
+    private void stopReadNFC(final CallbackContext callbackContext) {
+        cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (isInitialized) {
+                        NFCLockManager.getInstance().stopReadNFCTag(cordova.getActivity());
+                        android.util.Log.d("NFCLockPlugin", "NFC读取已停止(stopReadNFC)");
+                    }
+                    callbackContext.success("NFC读取已停止");
+                } catch (Exception e) {
+                    android.util.Log.e("NFCLockPlugin", "stopReadNFC失败: " + e.getMessage());
+                    callbackContext.error("stopReadNFC failed: " + e.getMessage());
+                }
+            }
+        });
     }
     /** 确保已初始化后执行回调 */
     private void ensureInitializedThen(final CallbackContext callbackContext, final Runnable action) {
@@ -450,6 +501,9 @@ public class NFCLockPlugin extends CordovaPlugin {
         pendingOperation = null;
         cancelAutoFlowChargeTimeout();
         chargeFeedback.stop();
+        resetNfcSession();
+        tagConnectedInFlow = false;
+        flowArmedCommand = FLOW_ARM_NONE;
     }
     /** 向 JS 发送流程错误 */
     private void sendJsFlowError(String message) {
@@ -803,21 +857,86 @@ public class NFCLockPlugin extends CordovaPlugin {
         NFCLockManager.getInstance().registerNFCLockCallBack(callback);
         }
     // ========== NFC 会话与命令下发 ==========
+    /** 取消尚未执行的 Reader 重启任务 */
+    private void cancelPendingReaderRestart() {
+        if (pendingReaderRestartRunnable != null) {
+            autoFlowHandler.removeCallbacks(pendingReaderRestartRunnable);
+            pendingReaderRestartRunnable = null;
+        }
+        pendingReaderRestartOnReady = null;
+    }
+    /** 合并多次重启请求，避免电机结束与 JS prepare 互相取消 */
+    private void enqueueReaderRestartOnReady(final Runnable onReady) {
+        if (onReady == null) {
+            return;
+        }
+        if (pendingReaderRestartOnReady == null) {
+            pendingReaderRestartOnReady = onReady;
+            return;
+        }
+        final Runnable previous = pendingReaderRestartOnReady;
+        pendingReaderRestartOnReady = new Runnable() {
+            @Override
+            public void run() {
+                previous.run();
+                onReady.run();
+            }
+        };
+    }
+    /** 执行合并后的 Reader 重启完成回调 */
+    private void flushReaderRestartOnReady() {
+        final Runnable ready = pendingReaderRestartOnReady;
+        pendingReaderRestartOnReady = null;
+        if (ready != null) {
+            ready.run();
+        }
+    }
+    /**
+     * 完整重启 Reader Mode：reset → stop → 等待 → start → 等待 Tag 就绪 → 回调。
+     * 多次调用会合并为一次重启，贴卡不拿开也可连续开/关锁。
+     */
+    private void restartReaderModeDelayed(final Runnable onReady) {
+        enqueueReaderRestartOnReady(onReady);
+        if (pendingReaderRestartRunnable != null) {
+            android.util.Log.d("NFCLockPlugin", "Reader重启进行中，已合并回调");
+            return;
+        }
+        resetNfcSession();
+        tagConnectedInFlow = false;
+        flowArmedCommand = FLOW_ARM_NONE;
+        cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    NFCLockManager.getInstance().stopReadNFCTag(cordova.getActivity());
+                } catch (Exception e) {
+                    android.util.Log.w("NFCLockPlugin", "stopReadNFCTag忽略异常: " + e.getMessage());
+                }
+                pendingReaderRestartRunnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        pendingReaderRestartRunnable = null;
+                        try {
+                            NFCLockManager.getInstance().startReadNFCTag(cordova.getActivity());
+                            android.util.Log.d("NFCLockPlugin", "NFC读卡已重启");
+                        } catch (Exception e) {
+                            android.util.Log.w("NFCLockPlugin", "startReadNFCTag忽略异常: " + e.getMessage());
+                        }
+                        autoFlowHandler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                flushReaderRestartOnReady();
+                            }
+                        }, READER_POST_START_ARM_MS);
+                    }
+                };
+                autoFlowHandler.postDelayed(pendingReaderRestartRunnable, CHARGE_SESSION_WARMUP_MS);
+            }
+        });
+    }
     /** 重启读卡会话并执行命令 */
     private void restartReadSessionAndExecute(final Runnable command) {
-        try {
-            NFCLockManager.getInstance().stopReadNFCTag(cordova.getActivity());
-        } catch (Exception e) {
-            android.util.Log.w("NFCLockPlugin", "stopReadNFCTag忽略异常: " + e.getMessage());
-        }
-
-        try {
-            NFCLockManager.getInstance().startReadNFCTag(cordova.getActivity());
-        } catch (Exception e) {
-            android.util.Log.w("NFCLockPlugin", "startReadNFCTag忽略异常: " + e.getMessage());
-        }
-
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+        restartReaderModeDelayed(new Runnable() {
             @Override
             public void run() {
                 command.run();
@@ -827,7 +946,7 @@ public class NFCLockPlugin extends CordovaPlugin {
                     android.util.Log.e("NFCLockPlugin", "NFC写入失败: " + e.getMessage());
                 }
             }
-        }, READ_SESSION_DELAY_MS);
+        });
     }
     /** 在自动流程队列执行命令 */
     private void runAutoFlowCommand(final Runnable command) {
@@ -914,9 +1033,22 @@ public class NFCLockPlugin extends CordovaPlugin {
         resetNfcSession();
         tagConnectedInFlow = false;
         flowArmedCommand = FLOW_ARM_NONE;
-        ensureReaderModeActive();
+        restartReaderModeDelayed(null);
     }
-    /** 确保 Reader Mode 激活 */
+    /** JS 主动请求：为下一次读卡重置 NFC 会话（贴卡不拿开可连续读） */
+    private void resetNfcForNextRead(final CallbackContext callbackContext) {
+        if (!isInitialized) {
+            callbackContext.error("插件未初始化");
+            return;
+        }
+        restartReaderModeDelayed(new Runnable() {
+            @Override
+            public void run() {
+                callbackContext.success("NFC会话已重置");
+            }
+        });
+    }
+    /** 确保 Reader Mode 激活（仅 start，不 stop） */
     private void ensureReaderModeActive() {
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
@@ -1063,11 +1195,11 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            dispatchJsNfcCommand(new Runnable() {
+            restartReadSessionAndExecute(new Runnable() {
                 @Override
                 public void run() {
                     NFCLockManager.getInstance().reqQueryLockId();
-                    android.util.Log.d("NFCLockPlugin", "JS查询锁ID");
+                    android.util.Log.d("NFCLockPlugin", "JS查询锁ID(重启会话后)");
                 }
             });
             android.util.Log.d("NFCLockPlugin", "查询NFC锁ID指令已发送");
@@ -2023,16 +2155,14 @@ public class NFCLockPlugin extends CordovaPlugin {
         executePendingMotorOperation();
         final String powerSnapshot = powerLevel;
         final String stateSnapshot = lockState;
-        final boolean jsFlow = jsChargeMotorRunning;
         autoFlowHandler.post(new Runnable() {
             @Override
             public void run() {
                 if (stateSnapshot != null && !stateSnapshot.isEmpty()) {
                     lastKnownLockState = stateSnapshot.trim();
                 }
-                if (!jsFlow) {
-                    notifyFlowChargeComplete(powerSnapshot, stateSnapshot);
-                }
+                // 通知满电，便于前端进度条显示 100%
+                notifyFlowChargeComplete(powerSnapshot, stateSnapshot);
                 if (auto) {
                     sendAutoFlowProgress(4, "充电完成，正在执行电机操作");
                 } else if (manualFlowRunning) {
@@ -2043,8 +2173,15 @@ public class NFCLockPlugin extends CordovaPlugin {
     }
     /** 充电中继续电量轮询 */
     private void continueFlowChargePolling(String powerLevel, String lockState, boolean auto) {
-        if (powerLevel != null && !jsChargeMotorRunning) {
-            chargeFeedback.update(powerLevel);
+        if (powerLevel != null) {
+            if (!jsChargeMotorRunning) {
+                chargeFeedback.update(powerLevel);
+            } else {
+                // JS 开/关锁充电：每次查询结果都回传前端（含上升/下降），保证圆环与查询一致
+                notifyFlowChargePowerLevel(powerLevel, lockState);
+                lastNotifiedChargePercent = parsePowerPercent(powerLevel);
+                chargeFeedback.update(powerLevel);
+            }
         }
         reqQueryPowerLevelWithLoopImmediate();
         if (flowChargeStartMs == 0L) {
@@ -2147,9 +2284,9 @@ public class NFCLockPlugin extends CordovaPlugin {
             lockStateBeforeMotor = lockState;
         }
     }
-    /** 通知充电电量变化（JS 编排充电轮询期间跳过，避免拖慢链式 WithLoop） */
+    /** 通知充电电量变化（同步发送，避免 Handler 排队导致前端圆环卡住/不灵敏） */
     private void notifyFlowChargePowerLevel(String powerLevel, String lockState) {
-        if (globalCallbackContext == null || jsChargeMotorRunning) {
+        if (globalCallbackContext == null) {
             return;
         }
         try {
