@@ -35,7 +35,6 @@ public class NFCLockPlugin extends CordovaPlugin {
     private String manualFlowMotorAction = null;
     private String cachedLockPassword = null;
     private String cachedLockId = null;
-    private static final String DEFAULT_LOCK_PASSWORD = "D7UOebAQ";
     private static final String PREFS_NAME = "NFCLockPluginPrefs";
     private static final String PREF_CACHED_LOCK_PASSWORD = "cached_lock_password";
     private static final String PREF_CACHED_LOCK_ID = "cached_lock_id";
@@ -232,7 +231,7 @@ public class NFCLockPlugin extends CordovaPlugin {
         } else if ("queryLockId".equals(action)) {
             this.queryLockId(callbackContext);
             return true;
-        } else if ("queryLockPassword".equals(action)) {
+        } else if ("queryLockPassword".equals(action) || "queryPassword".equals(action)) {
             this.queryLockPassword(callbackContext);
             return true;
         } else if ("queryVersion".equals(action)) {
@@ -1187,7 +1186,7 @@ public class NFCLockPlugin extends CordovaPlugin {
         return true;
     }
     // ========== 锁指令（无密码参数） ==========
-    /** 查询锁 ID */
+    /** 查询锁 ID（贴卡已连接时会话内直查，不重启读卡） */
     private void queryLockId(CallbackContext callbackContext) {
         if (!isInitialized) {
             callbackContext.error("插件未初始化");
@@ -1195,21 +1194,21 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            restartReadSessionAndExecute(new Runnable() {
+            dispatchJsNfcCommand(new Runnable() {
                 @Override
                 public void run() {
                     NFCLockManager.getInstance().reqQueryLockId();
-                    android.util.Log.d("NFCLockPlugin", "JS查询锁ID(重启会话后)");
+                    android.util.Log.d("NFCLockPlugin", "JS查询锁ID");
                 }
             });
             android.util.Log.d("NFCLockPlugin", "查询NFC锁ID指令已发送");
-            callbackContext.success("查询NFC锁ID指令已发送，请将NFC卡靠近设备");
+            callbackContext.success("查询NFC锁ID指令已发送，请保持贴卡");
         } catch (Exception e) {
             android.util.Log.e("NFCLockPlugin", "查询锁ID失败: " + e.getMessage());
             callbackContext.error("Query lock ID failed: " + e.getMessage());
         }
     }
-    /** 查询锁密码 */
+    /** 查询锁密码（贴卡不拿开：会话内链式查询，不重启读卡） */
     private void queryLockPassword(CallbackContext callbackContext) {
         if (!isInitialized) {
             callbackContext.error("插件未初始化");
@@ -1217,15 +1216,15 @@ public class NFCLockPlugin extends CordovaPlugin {
         }
         
         try {
-            restartReadSessionAndExecute(new Runnable() {
+            dispatchJsNfcCommand(new Runnable() {
                 @Override
                 public void run() {
                     NFCLockManager.getInstance().reqQueryLockPwd();
-                    android.util.Log.d("NFCLockPlugin", "查询锁密码已触发（重置读卡会话后）");
+                    android.util.Log.d("NFCLockPlugin", "JS查询锁密码(会话内)");
                 }
             });
             android.util.Log.d("NFCLockPlugin", "查询密码指令已发送");
-            callbackContext.success("查询密码指令已发送，请将NFC卡靠近设备");
+            callbackContext.success("查询密码指令已发送，请保持贴卡");
         } catch (Exception e) {
             android.util.Log.e("NFCLockPlugin", "查询锁密码失败: " + e.getMessage());
             callbackContext.error("Query lock password failed: " + e.getMessage());
@@ -1582,12 +1581,15 @@ public class NFCLockPlugin extends CordovaPlugin {
         return cordova.getActivity().getApplicationContext()
                 .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
-    /** 获取有效锁密码（缓存或默认） */
+    /** 获取有效锁密码（内存/持久化缓存；无缓存则 null，不再使用固定默认密码） */
     private String getEffectiveLockPassword() {
+        if (lockPassword != null && !lockPassword.isEmpty()) {
+            return lockPassword;
+        }
         if (cachedLockPassword != null && !cachedLockPassword.isEmpty()) {
             return cachedLockPassword;
         }
-        return DEFAULT_LOCK_PASSWORD;
+        return null;
     }
     /** 缓存并持久化锁密码 */
     private void cacheLockPassword(String password) {
@@ -1648,7 +1650,7 @@ public class NFCLockPlugin extends CordovaPlugin {
         cancelMotorResponseTimeout();
         lockPassword = getEffectiveLockPassword();
         android.util.Log.d("NFCLockPlugin", "手动流程使用密码: "
-                + (cachedLockPassword != null && !cachedLockPassword.isEmpty() ? "缓存" : "默认"));
+                + (cachedLockPassword != null && !cachedLockPassword.isEmpty() ? "缓存" : "待贴卡读取"));
         autoFlowChargeStartMs = 0L;
         autoFlowChargePollCount = 0;
         lastNotifiedChargePercent = -1;
@@ -1906,9 +1908,8 @@ public class NFCLockPlugin extends CordovaPlugin {
             }
             if (cachedLockPassword != null && !cachedLockPassword.isEmpty()) {
                 json.put("lockPassword", cachedLockPassword);
-            } else {
-                json.put("lockPassword", getEffectiveLockPassword());
-                json.put("usingDefaultPassword", true);
+            } else if (lockPassword != null && !lockPassword.isEmpty()) {
+                json.put("lockPassword", lockPassword);
             }
             if ("manualFlowComplete".equals(type) && flowChargeDurationMs >= 0L) {
                 json.put("totalMs", flowChargeDurationMs);

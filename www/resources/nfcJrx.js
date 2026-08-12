@@ -93,10 +93,10 @@
   }
 
   /** 带超时的 Promise 包装（贴卡等待） */
-  function withTimeout(ms, executor) {
+  function withTimeout(ms, executor, timeoutMessage) {
     return new Promise(function (resolve, reject) {
       var timer = setTimeout(function () {
-        reject(new Error('超时，请将NFC卡靠近设备后重试'));
+        reject(new Error(timeoutMessage || '超时，请保持贴卡后重试'));
       }, ms);
       executor(function (value) {
         clearTimeout(timer);
@@ -317,7 +317,9 @@
    */
   function statusByPhase(phaseName, detail) {
     if (phaseName === 'query_lock_id') return setLockStatus('请贴卡', 'tip-red');
-    if (phaseName === 'fetch_password') return setLockStatus('匹配权限中', 'charging');
+    if (phaseName === 'fetch_password' || phaseName === 'query_lock_password') {
+      return setLockStatus('请保持贴卡', 'charging');
+    }
     if (phaseName === 'charging') return setLockStatus('请保持贴卡', 'charging');
     if (phaseName === 'motor') {
       var act = detail && detail.action;
@@ -375,15 +377,17 @@
     resolve(payload);
   }
 
-  /** 默认取密码：LockPermission 或 appConfig 兜底密码 */
+  /**
+   * 默认取密码：贴卡 queryLockPassword 从 NFC 锁读取（不再使用 AppConfig 固定默认密码）
+   * @param {string} [lockId] 已读到的锁 ID（日志用，读密码指令本身不依赖此参数）
+   * @returns {Promise<string>}
+   */
   function defaultReadPasswordFn(lockId) {
-    if (global.LockPermission && typeof global.LockPermission.fetchPassword === 'function') {
-      if (global.LockPermission.applyConfig) global.LockPermission.applyConfig();
-      return global.LockPermission.fetchPassword(lockId);
-    }
-    var pwd = (global.AppConfig && (global.AppConfig.defaultLockPassword || global.AppConfig.fallbackPassword)) || '';
-    if (pwd) return Promise.resolve(String(pwd).trim());
-    return Promise.reject(new Error('未配置 readPasswordFn 或 LockPermission'));
+    return NfcJrxUtil.queryLockPasswordAsync().then(function (r) {
+      var pwd = r && (r.lockPassword || r.password);
+      if (!pwd) throw new Error('未从NFC卡读取到锁密码，请保持贴卡后重试');
+      return String(pwd).trim();
+    });
   }
 
   /** 读取自动开关锁计数（localStorage） */
@@ -642,9 +646,15 @@
             if (pwd) {
               latestLockPassword = String(pwd).trim();
               if (pendingQueryLockPasswordResolve) {
-                pendingQueryLockPasswordResolve({ lockPassword: latestLockPassword });
+                pendingQueryLockPasswordResolve({
+                  lockPassword: latestLockPassword,
+                  password: latestLockPassword
+                });
                 pendingQueryLockPasswordResolve = null;
               }
+            } else if (isQueryPwdResp && pendingQueryLockPasswordResolve) {
+              pendingQueryLockPasswordResolve(result || {});
+              pendingQueryLockPasswordResolve = null;
             }
           }
 
@@ -705,9 +715,10 @@
      * 通用步骤重试：发指令 → 等待回调 → 校验
      * @param {string} stepText 步骤名（日志用）
      * @param {number} attempts 最大尝试次数
-     * @param {number} timeoutMs 单次超时
+     * @param {Function} resultValidator 校验回包
+     * @param {string} [timeoutMessage] 超时提示
      */
-    runStepWithRetry: function (stepText, attempts, timeoutMs, fireCommand, pendingSetter, resultValidator) {
+    runStepWithRetry: function (stepText, attempts, timeoutMs, fireCommand, pendingSetter, resultValidator, timeoutMessage) {
       return new Promise(function (resolve, reject) {
         var lastErr = null;
         var attempt = 0;
@@ -723,7 +734,7 @@
           withTimeout(timeoutMs, function (resolvePending) {
             pendingSetter(resolvePending);
             fireCommand();
-          })
+          }, timeoutMessage)
             .then(function (result) {
               if (resultValidator && !resultValidator(result)) {
                 throw new Error(stepText + ' 回包无效');
@@ -827,11 +838,15 @@
       return this.ensureInitialized(options).then(function () {
         return self.runStepWithRetry(
           '查询锁密码',
-          nfcCfg.queryLockPasswordRetries || 2,
+          nfcCfg.queryLockPasswordRetries || 3,
           nfcCfg.queryLockPasswordTimeoutMs || 3500,
           function () { self.queryLockPassword(); },
           function (resolve) { pendingQueryLockPasswordResolve = resolve; },
-          function (r) { return !!(r && r.lockPassword); }
+          function (r) {
+            var pwd = r && (r.lockPassword || r.password);
+            return !!pwd;
+          },
+          '读取锁密码超时，请保持贴卡'
         );
       });
     },
@@ -864,8 +879,10 @@
     },
 
     /**
-     * 通过权限/配置匹配锁密码（不读卡）
+     * 通过贴卡或自定义方法获取锁密码
+     * 默认：queryLockPasswordAsync 从 NFC 卡读取；可传 readPasswordFn 覆盖（如权限接口）
      * @param {string} lockId
+     * @param {Function} [readPasswordFn]
      */
     fetchLockPasswordAsync: function (lockId, readPasswordFn) {
       var fn = readPasswordFn || defaultReadPasswordFn;
@@ -925,7 +942,8 @@
     },
 
     /**
-     * 完整开/关锁：查 ID → 取密码 → 原生充电链式轮询 + 电机
+     * 完整开/关锁：查 ID → 贴卡读密码 → 原生充电链式轮询 + 电机
+     * 密码默认由 NFC 卡 queryLockPassword 读取，不使用固定默认密码
      * @param {'open'|'close'} perType
      * @returns {Promise<{success, lockId, lockPassword, motorAction, chargeMs}>} chargeMs = 充电结束−开始
      */
@@ -966,10 +984,17 @@
             latestLockId = lockId;
             if (hooks.onLockId) hooks.onLockId(lockId);
             else log('锁ID: ' + lockId, 'success');
-            /**根据锁ID获取锁密码 */
-            phase('fetch_password', { lockId: lockId });
-            var lockPassword = await readFn(lockId, '');
-            if (!lockPassword) throw new Error('未获取到锁密码');
+
+            /** 锁 ID 已读后同一会话内读密码，无需重新贴卡 */
+            setLockStatus('请保持贴卡', 'charging');
+            var lockPassword;
+            if (options.readPasswordFn) {
+              lockPassword = await Promise.resolve(readFn(lockId, ''));
+            } else {
+              var pwdResult = await self.queryLockPasswordAsync(options);
+              lockPassword = pwdResult && (pwdResult.lockPassword || pwdResult.password);
+            }
+            if (!lockPassword) throw new Error('未从NFC卡读取到锁密码，请保持贴卡后重试');
             latestLockPassword = String(lockPassword).trim();
             if (hooks.onPasswordReady) hooks.onPasswordReady(lockId, latestLockPassword);
 

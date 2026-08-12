@@ -160,12 +160,12 @@ var NFCLockPlugin = {
      * @param {Function} error - 错误回调函数
      */
     queryPassword: function(success, error) {
-        exec(success, error, 'NFCLockPlugin', 'queryPassword', []);
+        exec(success, error, 'NFCLockPlugin', 'queryLockPassword', []);
     },
 
-    /** 与线上 nfcJrx.js 命名一致 */
+    /** 与 nfcJrx.js 命名一致 */
     queryLockPassword: function(success, error) {
-        exec(success, error, 'NFCLockPlugin', 'queryPassword', []);
+        exec(success, error, 'NFCLockPlugin', 'queryLockPassword', []);
     },
     
     /**

@@ -10,28 +10,10 @@
     return global.AppConfig || {};
   }
 
-  /** 从 AppConfig 取默认锁密码（defaultLockPassword 或 fallbackPassword） */
-  function defaultPassword() {
-    var cfg = getConfig();
-    return String(cfg.defaultLockPassword || cfg.fallbackPassword || 'D7UOebAQ').trim();
-  }
-
-  /** 是否允许在无匹配时使用 fallback 默认密码 */
-  function useFallbackEnabled() {
-    var cfg = getConfig();
-    if (cfg.useFallbackWhenNoMatch || cfg.grantAllLocks) return true;
-    try {
-      return localStorage.getItem('nfc_use_fallback') === '1';
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /** 是否对任意锁 ID 授权（grantAllLocks 或 fallback 开启时视为全开） */
+  /** 是否对任意锁 ID 授权（仅 grantAllLocks 配置为 true 时） */
   function grantAllLocksEnabled() {
     var cfg = getConfig();
-    if (cfg.grantAllLocks) return true;
-    return useFallbackEnabled();
+    return !!cfg.grantAllLocks;
   }
 
   /**
@@ -57,12 +39,10 @@
     apiLockIdParam: 'lockId',
     /** 接口请求超时（毫秒） */
     apiTimeoutMs: 10000,
-    /** 是否对全部锁 ID 授权 */
-    grantAllLocks: true,
-    /** 无匹配时是否使用 fallback 密码 */
-    useFallbackWhenNoMatch: true,
-    /** fallback 默认密码 */
-    fallbackPassword: 'D7UOebAQ',
+    /** 是否对全部锁 ID 授权（开/关锁默认贴卡读密码，不依赖此项） */
+    grantAllLocks: false,
+    /** 无匹配时是否兜底（已禁用固定默认密码） */
+    useFallbackWhenNoMatch: false,
     /** 自定义解析接口响应，返回密码字符串；未设置则用 extractPassword */
     parseApiResponse: null,
 
@@ -76,9 +56,7 @@
       if (cfg.lockPasswordApiMethod) this.apiMethod = cfg.lockPasswordApiMethod;
       if (cfg.lockPasswordApiTimeoutMs) this.apiTimeoutMs = cfg.lockPasswordApiTimeoutMs;
       if (cfg.lockPasswordApiLockIdParam) this.apiLockIdParam = cfg.lockPasswordApiLockIdParam;
-      this.useFallbackWhenNoMatch = !!cfg.useFallbackWhenNoMatch || !!cfg.grantAllLocks;
-      if (cfg.defaultLockPassword) this.fallbackPassword = cfg.defaultLockPassword;
-      else if (cfg.fallbackPassword) this.fallbackPassword = cfg.fallbackPassword;
+      this.useFallbackWhenNoMatch = !!cfg.useFallbackWhenNoMatch;
       this.grantAllLocks = !!cfg.grantAllLocks;
     },
 
@@ -195,7 +173,7 @@
 
     /**
      * 根据锁 ID 获取密码（供 nfcJrx 开/关锁流程调用）
-     * 优先级：会话缓存 -> 本地列表 -> HTTP 接口（传 lockId）-> grantAll/fallback 默认密码
+     * 优先级：会话缓存 -> 本地列表 -> HTTP 接口（传 lockId）；无匹配则报错（不使用固定默认密码）
      * @param {string} lockId 贴卡读到的锁 ID
      * @returns {Promise<string>} 锁密码
      */
@@ -222,12 +200,10 @@
       }
 
       if (grantAllLocksEnabled()) {
-        var pwd = defaultPassword();
-        sessionCache[id] = pwd;
-        return Promise.resolve(pwd);
+        return Promise.reject(new Error('grantAllLocks 已开启但未配置密码来源，请配置接口或本地列表'));
       }
 
-      return Promise.reject(new Error('未匹配到锁ID「' + id + '」的权限数据'));
+      return Promise.reject(new Error('未匹配到锁ID「' + id + '」的权限数据，请贴卡读取密码或配置权限接口'));
     }
   };
 

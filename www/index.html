@@ -430,7 +430,7 @@
         NfcJrxUtil.setHooks({
           log: log,
           onLockId: function(lockId){ log('锁ID: ' + lockId, 'success'); },
-          onPasswordReady: function(){ log('权限通过，锁密码已就绪', 'success'); },
+          onPasswordReady: function(){ log('锁密码已从NFC卡读取', 'success'); },
           onPower: function(percent, lockState, rate){
             // 圆环已由 nfcJrx.applyPowerSample 实时刷新；此处不刷屏日志以免拖慢 UI
           },
